@@ -279,7 +279,7 @@ destroy-keycloak: ## Destroy keycloak
 	@echo "✅ Keycloak uninstalled!"
 
 keycloak-vs: ## Deploy keycloak virtual service
-	@envsubst < manifests/keycloak-vs.yaml | kubectl apply -f -
+	@set -a && source .env && set +a && envsubst < manifests/keycloak-vs.yaml | kubectl apply -f -
 	@echo "✅ Keycloak virtual service deployed!"
 
 destroy-keycloak-vs: ## Destroy keycloak virtual service

@@ -1,0 +1,8 @@
+mirrors:
+  cr.makina.rocks:
+    endpoint:
+      - "https://cr.makina.rocks"
+configs:
+  "cr.makina.rocks":
+    auth:
+      auth: "bXJ4LmRldjpHTWZsekhkQWVSM0toR2dYb2VjWFIzbFRLTzBsU1g1Tw=="

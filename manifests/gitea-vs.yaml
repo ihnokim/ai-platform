@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gitea
+  namespace: ${GITEA__NAMESPACE}
+spec:
+  gateways:
+    - ${ISTIO__NAMESPACE}/runway-gateway
+  hosts:
+    - gitea.${DOMAIN_HOST}
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: gitea-http.${GITEA__NAMESPACE}.svc.cluster.local
+            port:
+              number: ${GITEA__HTTP_PORT}

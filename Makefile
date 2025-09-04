@@ -362,3 +362,54 @@ gitea-vs: ## Deploy gitea virtual service
 destroy-gitea-vs: ## Destroy gitea virtual service
 	@kubectl delete virtualservice gitea -n ${GITEA__NAMESPACE}
 	@echo "✅ Gitea virtual service destroyed!"
+
+add-airflow-repo: ## Add airflow repo
+	@helm repo add apache-airflow https://airflow.apache.org
+	@helm repo update
+
+install-airflow: ## Install airflow chart
+	@if [ ! -f "helm/airflow/Chart.yaml" ]; then \
+		echo "📦 Downloading apache-airflow/airflow chart..."; \
+		$(MAKE) add-airflow-repo; \
+		mkdir -p helm; \
+		helm pull apache-airflow/airflow --untar --untardir helm; \
+		echo "✅ apache-airflow/airflow chart downloaded to helm/airflow/"; \
+	fi
+
+airflow-vs: ## Deploy airflow virtual service
+	@set -a && source .env && set +a && envsubst < manifests/airflow-vs.yaml | kubectl apply -f -
+	@echo "✅ Airflow virtual service deployed!"
+
+destroy-airflow-vs: ## Destroy airflow virtual service
+	@kubectl delete virtualservice airflow -n ${AIRFLOW__NAMESPACE}
+	@echo "✅ Airflow virtual service destroyed!"
+
+airflow: install-airflow ## Install airflow chart
+# --set brokerdata.brokerUrl=redis://redis-master:6379/0
+	@helm upgrade --install airflow helm/airflow \
+		-n ${AIRFLOW__NAMESPACE} --create-namespace \
+		--set webserver.enabled=true \
+		--set webserver.defaultUser.enabled=true \
+		--set webserver.defaultUser.username=${AIRFLOW__ADMIN_USERNAME} \
+		--set webserver.defaultUser.password=${AIRFLOW__ADMIN_PASSWORD} \
+		--set webserver.defaultUser.email=${AIRFLOW__ADMIN_EMAIL} \
+		--set webserver.defaultUser.firstName=${AIRFLOW__ADMIN_FIRST_NAME} \
+		--set webserver.defaultUser.lastName=${AIRFLOW__ADMIN_LAST_NAME} \
+		--set webserver.defaultUser.role=Admin \
+		--set postgresql.enabled=false \
+		--set data.metadataConnection.host=${AIRFLOW__DATABASE_HOST} \
+		--set data.metadataConnection.port=${AIRFLOW__DATABASE_PORT} \
+		--set data.metadataConnection.db=${AIRFLOW__DATABASE_NAME} \
+		--set data.metadataConnection.protocol=${AIRFLOW__DATABASE_PROTOCOL} \
+		--set data.metadataConnection.user=${AIRFLOW__DATABASE_USERNAME} \
+		--set data.metadataConnection.pass=${AIRFLOW__DATABASE_PASSWORD} \
+		--set data.metadataConnection.sslmode=${AIRFLOW__DATABASE_SSL_MODE} \
+		--set ports.airflowUI=${AIRFLOW__HTTP_PORT} \
+		--set workers.replicas=${AIRFLOW__WORKERS_REPLICAS}
+	@$(MAKE) airflow-vs
+	@echo "✅ Airflow installed!"
+
+destroy-airflow: ## Destroy airflow chart
+	@helm uninstall airflow -n ${AIRFLOW__NAMESPACE}
+	@$(MAKE) destroy-airflow-vs
+	@echo "✅ Airflow uninstalled!"

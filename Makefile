@@ -1,6 +1,6 @@
 include .env
 
-.PHONY: help hello test-cluster destroy-test-cluster auth-test dns destroy-dns cnpg destroy-cnpg
+.PHONY: help hello test-cluster destroy-test-cluster auth-test dns destroy-dns cnpg destroy-cnpg database
 
 help: ## Show available commands
 	@echo "Commands:"
@@ -34,6 +34,9 @@ destroy-test-cluster: ## Destroy test cluster
 			fi \
 		fi \
 	fi
+
+kubeconfig:
+	@k3d kubeconfig get ${CLUSTER_NAME} > ~/.kube/config
 
 auth-test: ## Deploy auth-test app
 	@helm upgrade --install auth-test helm/auth-test \
@@ -157,7 +160,8 @@ install-istio-gateway: ## Install istio/gateway chart
 install-istio: install-istio-base install-istio-istiod install-istio-gateway ## Install istio charts
 
 runway-gateway: ## Deploy runway gateway chart
-	@helm upgrade --install runway-gateway helm/istio/runway-gateway -n ${ISTIO__NAMESPACE} --create-namespace \
+	@helm upgrade --install runway-gateway helm/istio/runway-gateway \
+		--namespace ${ISTIO__NAMESPACE} --create-namespace \
 		--set host=${DOMAIN_HOST}
 
 istio: install-istio ## Deploy istio base and istiod charts
@@ -194,6 +198,12 @@ install-cnpg-cluster: ## Install cnpg/cluster chart
 
 install-cnpg: install-cnpg-cloudnative-pg install-cnpg-cluster ## Install cnpg charts
 
+#		--set cluster.initdb.postInitSQL[0]="CREATE DATABASE ${KEYCLOAK__DATABASE_NAME};" \
+#		--set cluster.initdb.postInitSQL[1]="CREATE DATABASE ${GITEA__DATABASE_NAME};" \
+#		--set cluster.initdb.postInitSQL[2]="GRANT ALL PRIVILEGES ON SCHEMA ${CNPG__DATABASE_SCHEMA} TO ${CNPG__ADMIN_USERNAME};" \
+#		--set cluster.initdb.postInitSQL[3]="GRANT ALL PRIVILEGES ON DATABASE ${KEYCLOAK__DATABASE_NAME} TO ${CNPG__ADMIN_USERNAME};" \
+#		--set cluster.initdb.postInitSQL[4]="GRANT ALL PRIVILEGES ON DATABASE ${GITEA__DATABASE_NAME} TO ${CNPG__ADMIN_USERNAME};" \
+
 cnpg: install-cnpg ## Install cnpg charts
 	@helm upgrade --install cnpg-cloudnative-pg helm/cnpg/cloudnative-pg -n ${CNPG__OPERATOR_NAMESPACE} --create-namespace --wait
 #	--set config.clusterWide=false \
@@ -201,6 +211,7 @@ cnpg: install-cnpg ## Install cnpg charts
 # TODO: enable backups
 # TODO: enable recovery
 	@echo "🔐 Creating admin user secret..."
+	@kubectl create namespace ${CNPG__CLUSTER_NAMESPACE} || true
 	@kubectl create secret generic ${CNPG__ADMIN_SECRET} \
 		--from-literal=username=${CNPG__ADMIN_USERNAME} \
 		--from-literal=password=${CNPG__ADMIN_PASSWORD} \
@@ -211,8 +222,10 @@ cnpg: install-cnpg ## Install cnpg charts
 	@helm upgrade --install cnpg-cluster helm/cnpg/cluster \
 		-n ${CNPG__CLUSTER_NAMESPACE} --create-namespace \
 		--set cluster.initdb.database=${CNPG__DATABASE_NAME} \
-		--set cluster.initdb.owner=admin \
+		--set cluster.initdb.owner=${CNPG__ADMIN_USERNAME} \
 		--set cluster.initdb.secret.name=${CNPG__ADMIN_SECRET} \
+		--set cluster.enableSuperuserAccess=true \
+		--set cluster.initdb.postInitSQL[0]="ALTER USER ${CNPG__ADMIN_USERNAME} WITH SUPERUSER;" \
 		--set poolers[0].name=rw \
 		--set poolers[0].type=rw \
 		--set poolers[0].poolMode=transaction \
@@ -241,6 +254,18 @@ destroy-cnpg: ## Destroy cnpg cluster and operator
 	@helm uninstall cnpg-cloudnative-pg -n ${CNPG__OPERATOR_NAMESPACE} 2>/dev/null || echo "cnpg-cloudnative-pg not found"
 	@echo "✅ CNPG cleanup complete!"
 
+database: ## Create database
+	@if [ -z "${name}" ]; then \
+		echo "❌ Error: name is not set or empty"; \
+		echo "💡 Usage: make database name=your_database_name"; \
+		exit 1; \
+	fi
+	@echo "🔐 Creating database: ${name}..."
+	@kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"CREATE DATABASE ${name};\"" 2>/dev/null && echo "✅ Database ${name} created" || echo "⚠️  Database ${name} already exists"
+#	@echo "🔐 Granting privileges to ${name}..."
+#	@kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"GRANT ALL PRIVILEGES ON DATABASE ${name} TO ${CNPG__ADMIN_USERNAME};\""
+	@echo "✅ Database ${name} created and configured!"
+
 add-keycloak-repo: ## Add keycloak repo
 	@helm repo add bitnami https://charts.bitnami.com/bitnami
 	@helm repo update
@@ -257,8 +282,17 @@ install-keycloak:
 		echo "✅ bitnami/keycloak chart already exists (helm/keycloak/Chart.yaml found)"; \
 	fi
 
+keycloak-vs: ## Deploy keycloak virtual service
+	@set -a && source .env && set +a && envsubst < manifests/keycloak-vs.yaml | kubectl apply -f -
+	@echo "✅ Keycloak virtual service deployed!"
+
+destroy-keycloak-vs: ## Destroy keycloak virtual service
+	@kubectl delete virtualservice keycloak -n ${KEYCLOAK__NAMESPACE}
+	@echo "✅ Keycloak virtual service destroyed!"
+
 # TODO: values set 값들 수정해야 함
-keycloak: install-keycloak ## 
+keycloak: install-keycloak ## Install keycloak chart
+	@$(MAKE) database name=${KEYCLOAK__DATABASE_NAME}
 	@helm upgrade --install keycloak helm/keycloak \
 		-n ${KEYCLOAK__NAMESPACE} --create-namespace \
 		--set replicaCount=3 \
@@ -272,16 +306,59 @@ keycloak: install-keycloak ##
 		--set externalDatabase.password=${KEYCLOAK__DATABASE_PASSWORD} \
 		--set auth.adminUser=${KEYCLOAK__ADMIN_USERNAME} \
 		--set auth.adminPassword=${KEYCLOAK__ADMIN_PASSWORD}
+	@$(MAKE) keycloak-vs
 	@echo "✅ Keycloak installed!"
 
 destroy-keycloak: ## Destroy keycloak
 	@helm uninstall keycloak -n ${KEYCLOAK__NAMESPACE}
+	@$(MAKE) destroy-keycloak-vs
 	@echo "✅ Keycloak uninstalled!"
 
-keycloak-vs: ## Deploy keycloak virtual service
-	@set -a && source .env && set +a && envsubst < manifests/keycloak-vs.yaml | kubectl apply -f -
-	@echo "✅ Keycloak virtual service deployed!"
+add-gitea-repo: ## Add gitea repo
+	@helm repo add gitea-charts https://dl.gitea.com/charts/
+	@helm repo update
 
-destroy-keycloak-vs: ## Destroy keycloak virtual service
-	@kubectl delete -f manifests/keycloak-vs.yaml
-	@echo "✅ Keycloak virtual service destroyed!"
+install-gitea: ## Install gitea chart
+	@if [ ! -f "helm/gitea/Chart.yaml" ]; then \
+		echo "📦 Downloading gitea-charts/gitea chart..."; \
+		$(MAKE) add-gitea-repo; \
+		mkdir -p helm; \
+		helm pull gitea-charts/gitea --untar --untardir helm; \
+		echo "✅ gitea-charts/gitea chart downloaded to helm/gitea/"; \
+	else \
+		echo "✅ gitea-charts/gitea chart already exists (helm/gitea/Chart.yaml found)"; \
+	fi
+
+gitea: install-gitea ## Install gitea chart
+	@$(MAKE) database name=${GITEA__DATABASE_NAME}
+	@helm upgrade --install gitea helm/gitea \
+		-n ${GITEA__NAMESPACE} --create-namespace \
+		--set gitea.admin.username=${GITEA__ADMIN_USERNAME} \
+		--set gitea.admin.password=${GITEA__ADMIN_PASSWORD} \
+		--set gitea.admin.email=${GITEA__ADMIN_EMAIL} \
+		--set postgresql-ha.enabled=false \
+		--set postgresql.enabled=false \
+		--set valkey-cluster.enabled=false \
+		--set valkey.enabled=false \
+		--set service.http.port=${GITEA__HTTP_PORT} \
+		--set gitea.config.database.DB_TYPE=${GITEA__DATABASE_TYPE} \
+		--set gitea.config.database.HOST=${GITEA__DATABASE_HOST} \
+		--set gitea.config.database.PORT=${GITEA__DATABASE_PORT} \
+		--set gitea.config.database.NAME=${GITEA__DATABASE_NAME} \
+		--set gitea.config.database.USER=${GITEA__DATABASE_USERNAME} \
+		--set gitea.config.database.PASSWD=${GITEA__DATABASE_PASSWORD}
+	@$(MAKE) gitea-vs
+	@echo "✅ Gitea installed!"
+
+destroy-gitea: ## Destroy gitea chart
+	@helm uninstall gitea -n ${GITEA__NAMESPACE}
+	@$(MAKE) destroy-gitea-vs
+	@echo "✅ Gitea uninstalled!"
+
+gitea-vs: ## Deploy gitea virtual service
+	@set -a && source .env && set +a && envsubst < manifests/gitea-vs.yaml | kubectl apply -f -
+	@echo "✅ Gitea virtual service deployed!"
+
+destroy-gitea-vs: ## Destroy gitea virtual service
+	@kubectl delete virtualservice gitea -n ${GITEA__NAMESPACE}
+	@echo "✅ Gitea virtual service destroyed!"

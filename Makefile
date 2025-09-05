@@ -305,7 +305,9 @@ keycloak: install-keycloak ## Install keycloak chart
 		--set externalDatabase.user=${KEYCLOAK__DATABASE_USERNAME} \
 		--set externalDatabase.password=${KEYCLOAK__DATABASE_PASSWORD} \
 		--set auth.adminUser=${KEYCLOAK__ADMIN_USERNAME} \
-		--set auth.adminPassword=${KEYCLOAK__ADMIN_PASSWORD}
+		--set auth.adminPassword=${KEYCLOAK__ADMIN_PASSWORD} \
+		--set extraEnvVars[0].name=KC_HOSTNAME \
+		--set extraEnvVars[0].value=keycloak.${DOMAIN_HOST}
 	@$(MAKE) keycloak-vs
 	@echo "✅ Keycloak installed!"
 
@@ -329,6 +331,7 @@ install-gitea: ## Install gitea chart
 		echo "✅ gitea-charts/gitea chart already exists (helm/gitea/Chart.yaml found)"; \
 	fi
 
+# NOTE: autoDiscoverUrl은 내부 클러스터 주소 사용해야 함
 gitea: install-gitea ## Install gitea chart
 	@$(MAKE) database name=${GITEA__DATABASE_NAME}
 	@helm upgrade --install gitea helm/gitea \
@@ -346,7 +349,14 @@ gitea: install-gitea ## Install gitea chart
 		--set gitea.config.database.PORT=${GITEA__DATABASE_PORT} \
 		--set gitea.config.database.NAME=${GITEA__DATABASE_NAME} \
 		--set gitea.config.database.USER=${GITEA__DATABASE_USERNAME} \
-		--set gitea.config.database.PASSWD=${GITEA__DATABASE_PASSWORD}
+		--set gitea.config.database.PASSWD=${GITEA__DATABASE_PASSWORD} \
+		--set gitea.oauth[0].name=Keycloak \
+		--set gitea.oauth[0].provider=openidConnect \
+		--set gitea.oauth[0].key=gitea \
+		--set gitea.oauth[0].secret=gitea-secret-123 \
+		--set gitea.oauth[0].autoDiscoverUrl=http://keycloak.auth-system.svc.cluster.local/realms/master/.well-known/openid-configuration \
+		--set gitea.oauth[0].scopes="openid profile email" \
+		--set gitea.config.server.ROOT_URL=http://gitea.runway.ai/
 	@$(MAKE) gitea-vs
 	@echo "✅ Gitea installed!"
 

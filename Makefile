@@ -355,7 +355,15 @@ install-gitea: ## Install gitea chart
 # NOTE: autoDiscoverUrl은 내부 클러스터 주소 사용해야 함
 gitea: install-gitea ## Install gitea chart
 	@$(MAKE) database name=${GITEA__DATABASE_NAME}
-	@helm upgrade --install gitea helm/gitea \
+	@echo "🔑 Getting Gitea client secret from Keycloak..."
+	@GITEA__CLIENT_SECRET=$$(bash scripts/keycloak.sh get-client-secret gitea); \
+	if [ $$? -ne 0 ] || [ -z "$$GITEA__CLIENT_SECRET" ]; then \
+		echo "❌ Failed to get Gitea client secret from Keycloak"; \
+		exit 1; \
+	fi; \
+	echo "✅ Gitea client secret retrieved successfully"; \
+	echo "🚀 Installing Gitea with OAuth configuration..."; \
+	helm upgrade --install gitea helm/gitea \
 		-n ${GITEA__NAMESPACE} --create-namespace \
 		--set gitea.admin.username=${GITEA__ADMIN_USERNAME} \
 		--set gitea.admin.password=${GITEA__ADMIN_PASSWORD} \
@@ -374,8 +382,8 @@ gitea: install-gitea ## Install gitea chart
 		--set gitea.oauth[0].name=Keycloak \
 		--set gitea.oauth[0].provider=openidConnect \
 		--set gitea.oauth[0].key=gitea \
-		--set gitea.oauth[0].secret=gitea-secret-123 \
-		--set gitea.oauth[0].autoDiscoverUrl=http://keycloak.${DOMAIN_HOST}/realms/master/.well-known/openid-configuration \
+		--set gitea.oauth[0].secret=$$GITEA__CLIENT_SECRET \
+		--set gitea.oauth[0].autoDiscoverUrl=http://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME}/.well-known/openid-configuration \
 		--set gitea.oauth[0].scopes="openid profile email" \
 		--set gitea.config.server.ROOT_URL=http://gitea.${DOMAIN_HOST}/
 	@$(MAKE) gitea-vs

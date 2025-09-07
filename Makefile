@@ -120,6 +120,27 @@ destroy-dns: ## Cleanup dnsmasq configuration
 	sudo killall -HUP mDNSResponder; \
 	echo "✅ DNS cleanup complete!"
 
+internal-dns: ## Setup internal DNS for local development
+	@echo "🚀 Setting up internal DNS for local development..."
+	@echo "🌐 Using domain: ${DOMAIN_HOST}"
+	@echo "🔧 Generating internal DNS configuration..."
+	@echo "📝 Creating CoreDNS configuration with template plugin..."
+	@DOMAIN_HOST=${DOMAIN_HOST} ISTIO__NAMESPACE=${ISTIO__NAMESPACE} bash scripts/coredns-custom.sh
+	@echo "✅ Internal DNS setup complete!"
+# NOTE: kubectl rollout restart deployment coredns -n kube-system
+
+destroy-internal-dns: ## Destroy internal DNS for local development
+	@echo "🧹 Cleaning up internal DNS configuration..."
+	@kubectl delete configmap coredns-custom -n kube-system
+	@echo "✅ Internal DNS cleanup complete!"
+
+test-internal-dns:
+	@GITEA_POD_NAME=$$(kubectl get pods -n gitea -o jsonpath='{.items[0].metadata.name}'); \
+	kubectl exec -n gitea $$GITEA_POD_NAME -- nslookup keycloak.runway.ai
+
+current-internal-dns:
+	@kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}'
+
 add-istio-repo: ## Add istio repo
 	@helm repo add istio https://istio-release.storage.googleapis.com/charts
 	@helm repo update
@@ -354,9 +375,9 @@ gitea: install-gitea ## Install gitea chart
 		--set gitea.oauth[0].provider=openidConnect \
 		--set gitea.oauth[0].key=gitea \
 		--set gitea.oauth[0].secret=gitea-secret-123 \
-		--set gitea.oauth[0].autoDiscoverUrl=http://keycloak.auth-system.svc.cluster.local/realms/master/.well-known/openid-configuration \
+		--set gitea.oauth[0].autoDiscoverUrl=http://keycloak.${DOMAIN_HOST}/realms/master/.well-known/openid-configuration \
 		--set gitea.oauth[0].scopes="openid profile email" \
-		--set gitea.config.server.ROOT_URL=http://gitea.runway.ai/
+		--set gitea.config.server.ROOT_URL=http://gitea.${DOMAIN_HOST}/
 	@$(MAKE) gitea-vs
 	@echo "✅ Gitea installed!"
 

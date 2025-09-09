@@ -1,10 +1,97 @@
 include .env
 
-.PHONY: help hello test-cluster destroy-test-cluster auth-test dns destroy-dns cnpg destroy-cnpg database
+.PHONY: help root-ca csr cert ca tls test-cluster destroy-test-cluster auth-test dns destroy-dns cnpg destroy-cnpg database k8s-oidc-setup k8s-oidc-auth k8s-oidc-rbac
 
 help: ## Show available commands
 	@echo "Commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+dependency:
+	@if kubectl oidc-login --version >/dev/null 2>&1; then \
+		echo "✅ Kubectl oidc-login is installed"; \
+	else \
+		echo "❌ Kubectl oidc-login is not installed"; \
+		exit 1; \
+	fi
+
+root-ca: ## Create root CA
+	@mkdir -p ./certs
+	@openssl genrsa -out ./certs/root-ca.key 4096;
+	@openssl req -x509 -new -key ./certs/root-ca.key -sha256 -days 3650 -out ./certs/root-ca.pem \
+		-subj "/CN=Runway Root CA/O=Runway Platform/L=Gangnam/ST=Seoul/C=KR" \
+		-addext "basicConstraints=critical,CA:TRUE" \
+		-addext "keyUsage=critical,keyCertSign,cRLSign";
+
+csr: ## Create CSR for *.${DOMAIN_HOST}
+	@echo "📄 Creating CSR for *.${DOMAIN_HOST}..."
+	@openssl genrsa -out ./certs/${CLUSTER_NAME}-key.pem 4096;
+	@openssl req -new -key ./certs/${CLUSTER_NAME}-key.pem -out ./certs/${CLUSTER_NAME}.csr \
+		-subj "/CN=*.${DOMAIN_HOST}/OU=Platform Infrastructure/O=Runway Platform/L=Gangnam/ST=Seoul/C=KR" \
+		-addext "subjectAltName=DNS:*.${DOMAIN_HOST},DNS:${DOMAIN_HOST},DNS:*.serving.${DOMAIN_HOST}"
+
+sign-cert: ## Sign leaf certificate with Root CA
+	@echo "✍️ Signing leaf certificate with Root CA..."
+	@printf '%s\n' \
+		'[ext]' \
+		'basicConstraints=CA:FALSE' \
+		'keyUsage=digitalSignature,keyEncipherment' \
+		'extendedKeyUsage=serverAuth' \
+		"subjectAltName=DNS:*.${DOMAIN_HOST},DNS:${DOMAIN_HOST},DNS:*.serving.${DOMAIN_HOST}" \
+		> ./certs/${CLUSTER_NAME}-leaf.ext
+	@openssl x509 -req -in ./certs/${CLUSTER_NAME}.csr -CA ./certs/root-ca.pem -CAkey ./certs/root-ca.key -CAcreateserial \
+		-out ./certs/${CLUSTER_NAME}-cert.pem -days 825 -sha256 -extfile ./certs/${CLUSTER_NAME}-leaf.ext -extensions ext
+	@cat ./certs/${CLUSTER_NAME}-cert.pem ./certs/root-ca.pem > ./certs/${CLUSTER_NAME}-chain.pem
+
+deprecated-issue-cert: ## Issue certificate
+	@mkdir -p ./certs
+	@openssl req -x509 -newkey rsa:4096 -keyout ./certs/${CLUSTER_NAME}-key.pem -out ./certs/${CLUSTER_NAME}-cert.pem \
+		-days 365 -nodes \
+		-subj "/CN=*.${DOMAIN_HOST}/OU=Platform Infrastructure/O=Runway Platform/L=Gangnam/ST=Seoul/C=KR" \
+		-addext "subjectAltName=DNS:*.${DOMAIN_HOST},DNS:${DOMAIN_HOST}";
+
+deprecated-apply-cert: ## Apply certificate
+	@if [ "$$(uname)" = "Darwin" ] && [ -f ./certs/${CLUSTER_NAME}-cert.pem ]; then \
+		echo "🍎 Updating certificate in macOS Keychain..."; \
+		sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ./certs/${CLUSTER_NAME}-cert.pem && \
+		echo "✅ Certificate updated in macOS System Keychain" || \
+		echo "⚠️  Failed to update certificate in macOS Keychain (requires sudo)"; \
+	elif [ "$$(uname)" != "Darwin" ]; then \
+		echo "ℹ️  macOS certificate installation skipped (not macOS)"; \
+	fi
+
+apply-cert:
+	@if [ "$$(uname)" = "Darwin" ] && [ -f ./certs/root-ca.pem ]; then \
+		echo "🍎 Updating Root CA certificate in macOS Keychain..."; \
+		sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ./certs/root-ca.pem && \
+		echo "✅ Root CA certificate updated in macOS System Keychain" || \
+		echo "⚠️  Failed to update Root CA certificate in macOS Keychain (requires sudo)"; \
+	elif [ "$$(uname)" != "Darwin" ]; then \
+		echo "ℹ️  macOS certificate installation skipped (not macOS)"; \
+	fi
+
+deprecated-cert: deprecated-issue-cert deprecated-apply-cert
+
+cert: root-ca csr sign-cert apply-cert ## Issue and apply certificate
+
+deprecated-find-cert:
+	@security find-certificate -c "${DOMAIN_HOST}" /Library/Keychains/System.keychain
+
+find-cert:
+	@security find-certificate -c "Runway" /Library/Keychains/System.keychain
+
+delete-cert: ## Open Keychain Access for manual certificate deletion
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		echo "🗑️ Opening Keychain Access for manual deletion..."; \
+		open -a "Keychain Access"; \
+		echo "📋 Manual deletion steps:"; \
+		echo "1. Select 'System' keychain (left sidebar)"; \
+		echo "2. Select 'Certificates' category (top)"; \
+		echo "3. Find '${DOMAIN_HOST}' certificate"; \
+		echo "4. Select it and press Delete key"; \
+		echo "5. Enter admin password when prompted"; \
+	elif [ "$$(uname)" != "Darwin" ]; then \
+		echo "ℹ️ macOS certificate deletion skipped (not macOS)"; \
+	fi
 
 test-cluster: ## Install test cluster
 	@if ! k3d cluster list ${CLUSTER_NAME}; then \
@@ -13,9 +100,63 @@ test-cluster: ## Install test cluster
 		--registry-config "registry.yaml" \
 		--port "80:80@server:0:direct" \
 		--port "443:443@server:0:direct" \
-		-i --k3s-arg "--image=${TEST_CLUSTER__IMAGE}" \
-		--k3s-arg '--disable=traefik@server:*'; \
+		--api-port ${KUBERNETES__APISERVER_HOST}:${KUBERNETES__APISERVER_PORT} \
+		-i \
+		--k3s-arg "--image=${TEST_CLUSTER__IMAGE}" \
+		--k3s-arg '--disable=traefik@server:*' \
+		--volume "$$(pwd)/certs:/tmp/${CLUSTER_NAME}-certs:ro" \
+		--k3s-arg '--kube-apiserver-arg=oidc-issuer-url=${KUBERNETES__OIDC_ISSUER_URL}@server:*' \
+		--k3s-arg '--kube-apiserver-arg=oidc-client-id=${KUBERNETES__OIDC_CLIENT_ID}@server:*' \
+		--k3s-arg '--kube-apiserver-arg=oidc-username-claim=preferred_username@server:*' \
+		--k3s-arg '--kube-apiserver-arg=oidc-groups-claim=groups@server:*' \
+		--k3s-arg '--kube-apiserver-arg=oidc-ca-file=/tmp/${CLUSTER_NAME}-certs/${CLUSTER_NAME}-cert.pem@server:*' \
+		--k3s-arg '--kube-apiserver-arg=authorization-mode=Node,RBAC@server:*'; \
 	fi
+
+deprecated-tls:
+	@if [ ! -f "./certs/${CLUSTER_NAME}-cert.pem" ]; then \
+		echo "❌ Certificate ${CLUSTER_NAME}-cert.pem does not exist"; \
+		echo "Please run 'make cert' first to generate certificate chain"; \
+		exit 1; \
+	fi
+	@if [ ! -f "./certs/${CLUSTER_NAME}-key.pem" ]; then \
+		echo "❌ Key ${CLUSTER_NAME}-key.pem does not exist"; \
+		exit 1; \
+	fi
+	@kubectl create secret tls ${CLUSTER_NAME}-tls \
+		--cert=./certs/${CLUSTER_NAME}-cert.pem \
+		--key=./certs/${CLUSTER_NAME}-key.pem \
+		-n ${ISTIO__NAMESPACE}
+
+tls:
+	@if [ ! -f "./certs/${CLUSTER_NAME}-chain.pem" ]; then \
+		echo "❌ Certificate chain ${CLUSTER_NAME}-chain.pem does not exist"; \
+		echo "Please run 'make cert' first to generate certificate chain"; \
+		exit 1; \
+	fi
+	@if [ ! -f "./certs/${CLUSTER_NAME}-key.pem" ]; then \
+		echo "❌ Key ${CLUSTER_NAME}-key.pem does not exist"; \
+		exit 1; \
+	fi
+	@kubectl create secret tls ${CLUSTER_NAME}-tls \
+		--cert=./certs/${CLUSTER_NAME}-chain.pem \
+		--key=./certs/${CLUSTER_NAME}-key.pem \
+		-n ${ISTIO__NAMESPACE}
+
+copy-tls: ## Copy TLS secret from istio-system to gitea namespace
+	@echo "📋 Copying TLS secret from istio-system to ${namespace} namespace..."
+	@kubectl get secret ${CLUSTER_NAME}-tls -n ${ISTIO__NAMESPACE} -o yaml | \
+		sed 's/namespace: ${ISTIO__NAMESPACE}/namespace: ${namespace}/' | \
+		kubectl apply -f -
+	@echo "✅ TLS secret copied to ${namespace} namespace"
+
+ca: ## Create CA secret
+	-@kubectl create namespace ${namespace}
+	@kubectl create secret generic ${CLUSTER_NAME}-ca \
+		-n ${namespace} \
+		--from-file=ca.crt=./certs/${CLUSTER_NAME}-cert.pem
+
+# --k3s-arg '--kube-apiserver-arg=oidc-ca-file=/tmp/${CLUSTER_NAME}-certs/${CLUSTER_NAME}-cert.pem@server:*'
 
 destroy-test-cluster: ## Destroy test cluster
 	@if k3d cluster list ${CLUSTER_NAME} >/dev/null 2>&1; then \
@@ -35,8 +176,21 @@ destroy-test-cluster: ## Destroy test cluster
 		fi \
 	fi
 
-kubeconfig:
+kubeconfig-admin:
 	@k3d kubeconfig get ${CLUSTER_NAME} > ~/.kube/config
+
+kubeconfig-user:
+	@cat ./.kube/config > ~/.kube/config
+
+kubelogin-decoded-token:
+	@kubectl oidc-login get-token \
+		--oidc-issuer-url=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME} \
+		--oidc-client-id=kubernetes \
+		--insecure-skip-tls-verify -v=0 \
+		| jq -r '.status.token | split(".")[1] | @base64d | fromjson'
+
+kubelogout:
+	@rm -rf ~/.kube/cache/oidc-login/*
 
 auth-test: ## Deploy auth-test app
 	@helm upgrade --install auth-test helm/auth-test \
@@ -180,16 +334,19 @@ install-istio-gateway: ## Install istio/gateway chart
 
 install-istio: install-istio-base install-istio-istiod install-istio-gateway ## Install istio charts
 
-runway-gateway: ## Deploy runway gateway chart
+runway-gateway: deprecated-tls ## Deploy runway gateway chart
 	@helm upgrade --install runway-gateway helm/istio/runway-gateway \
 		--namespace ${ISTIO__NAMESPACE} --create-namespace \
-		--set host=${DOMAIN_HOST}
+		--set host=${DOMAIN_HOST} \
+		--set tls.enabled=true \
+		--set tls.credentialName=${CLUSTER_NAME}-tls
 
 istio: install-istio ## Deploy istio base and istiod charts
 	@helm upgrade --install istio-base helm/istio/base -n ${ISTIO__NAMESPACE} --create-namespace
 	@helm upgrade --install istio-istiod helm/istio/istiod -n ${ISTIO__NAMESPACE} --create-namespace
 	@helm upgrade --install istio-gateway helm/istio/gateway -n ${ISTIO__NAMESPACE} --create-namespace
 	@$(MAKE) runway-gateway
+	@$(MAKE) internal-dns
 
 add-cnpg-repo: ## Add cnpg repo
 	@helm repo add cnpg https://cloudnative-pg.github.io/charts
@@ -328,9 +485,23 @@ keycloak: install-keycloak ## Install keycloak chart
 		--set auth.adminUser=${KEYCLOAK__ADMIN_USERNAME} \
 		--set auth.adminPassword=${KEYCLOAK__ADMIN_PASSWORD} \
 		--set extraEnvVars[0].name=KC_HOSTNAME \
-		--set extraEnvVars[0].value=keycloak.${DOMAIN_HOST}
+		--set extraEnvVars[0].value=keycloak.${DOMAIN_HOST} \
+		--set extraEnvVars[1].name=KC_PROXY_HEADERS \
+		--set extraEnvVars[1].value=xforwarded
 	@$(MAKE) keycloak-vs
 	@echo "✅ Keycloak installed!"
+
+# 		--set extraEnvVars[1].name=KC_HOSTNAME_STRICT
+# 		--set-string extraEnvVars[1].value=false
+#
+#  - name: KC_HOSTNAME_STRICT
+#    value: "true"
+#  - name: KC_HOSTNAME_STRICT_HTTPS
+#    value: "true"
+#  - name: KC_PROXY
+#    value: "edge"
+#  - name: KC_HTTP_ENABLED
+#    value: "true"
 
 destroy-keycloak: ## Destroy keycloak
 	@helm uninstall keycloak -n ${KEYCLOAK__NAMESPACE}
@@ -354,6 +525,7 @@ install-gitea: ## Install gitea chart
 
 # NOTE: autoDiscoverUrl은 내부 클러스터 주소 사용해야 함
 gitea: install-gitea ## Install gitea chart
+	-@$(MAKE) ca namespace=${GITEA__NAMESPACE}
 	@$(MAKE) database name=${GITEA__DATABASE_NAME}
 	@echo "🔑 Getting Gitea client secret from Keycloak..."
 	@GITEA__CLIENT_SECRET=$$(bash scripts/keycloak.sh get-client-secret gitea); \
@@ -383,9 +555,19 @@ gitea: install-gitea ## Install gitea chart
 		--set gitea.oauth[0].provider=openidConnect \
 		--set gitea.oauth[0].key=gitea \
 		--set gitea.oauth[0].secret=$$GITEA__CLIENT_SECRET \
-		--set gitea.oauth[0].autoDiscoverUrl=http://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME}/.well-known/openid-configuration \
+		--set gitea.oauth[0].autoDiscoverUrl=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME}/.well-known/openid-configuration \
 		--set gitea.oauth[0].scopes="openid profile email" \
-		--set gitea.config.server.ROOT_URL=http://gitea.${DOMAIN_HOST}/
+		--set gitea.config.server.ROOT_URL=https://gitea.${DOMAIN_HOST}/ \
+		--set deployment.env[0].name=SSL_CERT_FILE \
+		--set deployment.env[0].value=/etc/ssl/certs/${CLUSTER_NAME}-ca.crt \
+		--set extraVolumes[0].name=${CLUSTER_NAME}-ca \
+		--set extraVolumes[0].secret.secretName=${CLUSTER_NAME}-ca \
+		--set extraVolumes[0].secret.items[0].key=ca.crt \
+		--set extraVolumes[0].secret.items[0].path=${CLUSTER_NAME}-ca.crt \
+		--set extraVolumeMounts[0].name=${CLUSTER_NAME}-ca \
+		--set extraVolumeMounts[0].mountPath=/etc/ssl/certs/${CLUSTER_NAME}-ca.crt \
+		--set extraVolumeMounts[0].subPath=${CLUSTER_NAME}-ca.crt \
+		--set extraVolumeMounts[0].readOnly=true
 	@$(MAKE) gitea-vs
 	@echo "✅ Gitea installed!"
 

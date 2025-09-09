@@ -1,0 +1,26 @@
+# Role: cnpg-database namespace에서 pod 조회 권한만 부여
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-viewer
+  namespace: cnpg-database
+rules:
+  - apiGroups: [""]          # ""는 core API 그룹 (pods 등)
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding: Keycloak group "project:1:admin"과 연결
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: project-1-admin-pod-viewer
+  namespace: cnpg-database
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pod-viewer
+subjects:
+  - kind: Group
+    name: "project:1:admin"  # Keycloak groups claim에 있는 값과 동일하게
+    apiGroup: rbac.authorization.k8s.io

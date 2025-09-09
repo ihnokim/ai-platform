@@ -208,3 +208,4 @@ __marimo__/
 
 # Generated dnsmasq configuration
 dnsmasq.conf
+certs/*

@@ -13,7 +13,7 @@ if [ -f ".env" ]; then
 fi
 
 # Default configuration
-KEYCLOAK__URL="http://keycloak.${DOMAIN_HOST}"
+KEYCLOAK__URL="https://keycloak.${DOMAIN_HOST}"
 
 # Function to get admin token
 get_admin_token() {
@@ -24,7 +24,7 @@ get_admin_token() {
     
     # echo "🔑 Getting admin token from ${keycloak_url}..." >&2
     
-    local token=$(curl -s -X POST "${keycloak_url}/realms/${realm_name}/protocol/openid-connect/token" \
+    local token=$(curl -s -k -X POST "${keycloak_url}/realms/${realm_name}/protocol/openid-connect/token" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         -d "username=${admin_username}" \
         -d "password=${admin_password}" \
@@ -52,9 +52,9 @@ get_client_secret() {
     fi
     
     # echo "🔍 Getting client secret for client: ${client_id}..." >&2
-    
+
     # Get client UUID first
-    local client_uuid=$(curl -s -X GET "${keycloak_url}/admin/realms/${realm_name}/clients?clientId=${client_id}" \
+    local client_uuid=$(curl -s -k -X GET "${keycloak_url}/admin/realms/${realm_name}/clients?clientId=${client_id}" \
         -H "Authorization: Bearer ${admin_token}" \
         -H "Content-Type: application/json" | jq -r '.[0].id')
     
@@ -64,7 +64,7 @@ get_client_secret() {
     fi
     
     # Get client secret
-    local client_secret=$(curl -s -X GET "${keycloak_url}/admin/realms/${realm_name}/clients/${client_uuid}/client-secret" \
+    local client_secret=$(curl -s -k -X GET "${keycloak_url}/admin/realms/${realm_name}/clients/${client_uuid}/client-secret" \
         -H "Authorization: Bearer ${admin_token}" \
         -H "Content-Type: application/json" | jq -r '.value')
     
@@ -96,7 +96,7 @@ main() {
             echo "  get-client-secret <client_id> [realm_name] [keycloak_url] [admin_token]" >&2
             echo "" >&2
             echo "Environment variables:" >&2
-            echo "  KEYCLOAK__URL (default: http://keycloak.runway.ai)" >&2
+            echo "  KEYCLOAK__URL (default: https://keycloak.runway.ai)" >&2
             echo "  KEYCLOAK__ADMIN_USERNAME (default: admin)" >&2
             echo "  KEYCLOAK__ADMIN_PASSWORD (default: string1!)" >&2
             echo "  KEYCLOAK__REALM_NAME (default: master)" >&2

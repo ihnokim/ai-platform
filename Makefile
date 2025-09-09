@@ -468,7 +468,15 @@ database: ## Create database
 	@kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"CREATE DATABASE ${name};\"" 2>/dev/null && echo "✅ Database ${name} created" || echo "⚠️  Database ${name} already exists"
 #	@echo "🔐 Granting privileges to ${name}..."
 #	@kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"GRANT ALL PRIVILEGES ON DATABASE ${name} TO ${CNPG__ADMIN_USERNAME};\""
-	@echo "✅ Database ${name} created and configured!"
+
+destroy-database: ## Destroy database
+	@if [ -z "${name}" ]; then \
+		echo "❌ Error: name is not set or empty"; \
+		echo "💡 Usage: make destroy-database name=your_database_name"; \
+		exit 1; \
+	fi
+	@echo "🗑️  Removing database: ${name}..."
+	@kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"DROP DATABASE ${name};\"" 2>/dev/null && echo "✅ Database ${name} destroyed" || echo "⚠️  Database ${name} not found"
 
 add-keycloak-repo: ## Add keycloak repo
 	@helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -586,6 +594,16 @@ gitea: install-gitea ## Install gitea chart
 		--set gitea.config.server.ROOT_URL=https://gitea.${DOMAIN_HOST}/ \
 		--set deployment.env[0].name=SSL_CERT_FILE \
 		--set deployment.env[0].value=/etc/ssl/certs/${CLUSTER_NAME}-ca.crt \
+		--set deployment.env[1].name=GITEA__service__DISABLE_REGISTRATION \
+		--set-string deployment.env[1].value=true \
+		--set deployment.env[2].name=GITEA__service__ENABLE_PASSWORD_SIGNIN_FORM \
+		--set-string deployment.env[2].value=false \
+		--set deployment.env[3].name=GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION \
+		--set-string deployment.env[3].value=true \
+		--set deployment.env[4].name=GITEA__oauth2_client__USERNAME \
+		--set-string deployment.env[4].value=preferred_username \
+		--set deployment.env[5].name=GITEA__oauth2_client__ACCOUNT_LINKING \
+		--set-string deployment.env[5].value=auto \
 		--set extraVolumes[0].name=${CLUSTER_NAME}-ca \
 		--set extraVolumes[0].secret.secretName=${CLUSTER_NAME}-ca \
 		--set extraVolumes[0].secret.items[0].key=ca.crt \

@@ -177,10 +177,14 @@ destroy-test-cluster: ## Destroy test cluster
 	fi
 
 kubeconfig-admin:
-	@k3d kubeconfig get ${CLUSTER_NAME} > ~/.kube/config
+	@k3d kubeconfig get ${CLUSTER_NAME}
 
-kubeconfig-user:
-	@cat ./.kube/config > ~/.kube/config
+kubeconfig-oidc: ## Generate kubeconfig with OIDC authentication
+	@if ! [ -n "$${namespace}" ]; then \
+		echo "❌ namespace is not set"; \
+		exit 1; \
+	fi
+	@TARGET_NAMESPACE=${namespace} set -a && source .env && set +a && envsubst < manifests/kubeconfig.yaml
 
 kubelogin-decoded-token:
 	@kubectl oidc-login get-token \

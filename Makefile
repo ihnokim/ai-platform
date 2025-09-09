@@ -1,6 +1,6 @@
 include .env
 
-.PHONY: help root-ca csr cert ca tls test-cluster destroy-test-cluster auth-test dns destroy-dns cnpg destroy-cnpg database k8s-oidc-setup k8s-oidc-auth k8s-oidc-rbac
+.PHONY: help root-ca csr cert ca tls test-cluster destroy-test-cluster auth-test dns destroy-dns cnpg destroy-cnpg database
 
 help: ## Show available commands
 	@echo "Commands:"
@@ -195,6 +195,28 @@ kubelogin-decoded-token:
 
 kubelogout:
 	@rm -rf ~/.kube/cache/oidc-login/*
+
+kubernetes-oidc-project-roles: ## Create Kubernetes OIDC project roles
+	@if ! [ -n "$${namespace}" ]; then \
+		echo "❌ namespace is not set"; \
+		exit 1; \
+	fi
+	@TARGET_NAMESPACE=${namespace} set -a && source .env && set +a && envsubst < manifests/kubernetes-oidc-project-roles.yaml
+
+kubernetes-oidc-project-rolebinding: ## Create Kubernetes OIDC project rolebinding
+	@if ! [ -n "$${namespace}" ]; then \
+		echo "❌ namespace is not set"; \
+		exit 1; \
+	fi
+	@if ! [ -n "$${group}" ]; then \
+		echo "❌ group is not set"; \
+		exit 1; \
+	fi
+	@if ! [ -n "$${role}" ]; then \
+		echo "❌ role is not set"; \
+		exit 1; \
+	fi
+	@TARGET_NAMESPACE=${namespace} GROUP=${group} ROLE=${role} set -a && source .env && set +a && envsubst < manifests/kubernetes-oidc-project-rolebinding.yaml
 
 auth-test: ## Deploy auth-test app
 	@helm upgrade --install auth-test helm/auth-test \

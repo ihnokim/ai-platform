@@ -79,7 +79,7 @@ deprecated-find-cert:
 find-cert:
 	@security find-certificate -c "Runway" /Library/Keychains/System.keychain
 
-delete-cert: ## Open Keychain Access for manual certificate deletion
+destroy-cert: ## Open Keychain Access for manual certificate deletion
 	@if [ "$$(uname)" = "Darwin" ]; then \
 		echo "🗑️ Opening Keychain Access for manual deletion..."; \
 		open -a "Keychain Access"; \
@@ -465,7 +465,13 @@ database: ## Create database
 		exit 1; \
 	fi
 	@echo "🔐 Creating database: ${name}..."
-	@kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"CREATE DATABASE ${name};\"" 2>/dev/null && echo "✅ Database ${name} created" || echo "⚠️  Database ${name} already exists"
+	@CNPG_POD_NAME=$$(kubectl get endpoints ${CNPG__RW_SERVICE} -n ${CNPG__CLUSTER_NAMESPACE} -o jsonpath='{.subsets[0].addresses[0].targetRef.name}' 2>/dev/null); \
+	if [ -z "$$CNPG_POD_NAME" ]; then \
+		echo "❌ Error: No pod found for service ${CNPG__RW_SERVICE} in namespace ${CNPG__CLUSTER_NAMESPACE}"; \
+		exit 1; \
+	fi; \
+	echo "🔍 Using pod: $$CNPG_POD_NAME (from service ${CNPG__RW_SERVICE})"; \
+	kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"CREATE DATABASE ${name};\"" 2>/dev/null && echo "✅ Database ${name} created" || echo "⚠️  Database ${name} already exists"
 #	@echo "🔐 Granting privileges to ${name}..."
 #	@kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"GRANT ALL PRIVILEGES ON DATABASE ${name} TO ${CNPG__ADMIN_USERNAME};\""
 
@@ -476,7 +482,13 @@ destroy-database: ## Destroy database
 		exit 1; \
 	fi
 	@echo "🗑️  Removing database: ${name}..."
-	@kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"DROP DATABASE ${name};\"" 2>/dev/null && echo "✅ Database ${name} destroyed" || echo "⚠️  Database ${name} not found"
+	@CNPG_POD_NAME=$$(kubectl get endpoints ${CNPG__RW_SERVICE} -n ${CNPG__CLUSTER_NAMESPACE} -o jsonpath='{.subsets[0].addresses[0].targetRef.name}' 2>/dev/null); \
+	if [ -z "$$CNPG_POD_NAME" ]; then \
+		echo "❌ Error: No pod found for service ${CNPG__RW_SERVICE} in namespace ${CNPG__CLUSTER_NAMESPACE}"; \
+		exit 1; \
+	fi; \
+	echo "🔍 Using pod: $$CNPG_POD_NAME (from service ${CNPG__RW_SERVICE})"; \
+	kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"DROP DATABASE IF EXISTS ${name};\"" 2>/dev/null && echo "✅ Database ${name} destroyed" || echo "⚠️  Database ${name} not found"
 
 add-keycloak-repo: ## Add keycloak repo
 	@helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -678,3 +690,92 @@ destroy-airflow: ## Destroy airflow chart
 	@helm uninstall airflow -n ${AIRFLOW__NAMESPACE}
 	@$(MAKE) destroy-airflow-vs
 	@echo "✅ Airflow uninstalled!"
+
+add-openmetadata-repo: ## Add openmetadata repo
+	@helm repo add open-metadata https://helm.open-metadata.org/
+	@helm repo update
+
+install-openmetadata: ## Install openmetadata chart
+	@if [ ! -f "helm/openmetadata/Chart.yaml" ]; then \
+		echo "📦 Downloading open-metadata/openmetadata chart..."; \
+		$(MAKE) add-openmetadata-repo; \
+		mkdir -p helm; \
+		helm pull open-metadata/openmetadata --untar --untardir helm; \
+		echo "✅ open-metadata/openmetadata chart downloaded to helm/openmetadata/"; \
+	else \
+		echo "✅ open-metadata/openmetadata chart already exists (helm/openmetadata/Chart.yaml found)"; \
+	fi
+
+openmetadata-vs: ## Deploy openmetadata virtual service
+	@set -a && source .env && set +a && envsubst < manifests/openmetadata-vs.yaml | kubectl apply -f -
+	@echo "✅ Openmetadata virtual service deployed!"
+
+destroy-openmetadata-vs: ## Destroy openmetadata virtual service
+	@kubectl delete virtualservice openmetadata -n ${OPENMETADATA__NAMESPACE}
+	@echo "✅ Openmetadata virtual service destroyed!"
+
+openmetadata: install-openmetadata ## Install openmetadata chart
+	-@kubectl create namespace ${OPENMETADATA__NAMESPACE} || true
+	@$(MAKE) database name=${OPENMETADATA__DATABASE_NAME}
+	-@kubectl create secret generic ${OPENMETADATA__ADMIN_SECRET} \
+		--from-literal=username=${OPENMETADATA__DATABASE_USERNAME} \
+		--from-literal=${OPENMETADATA__ADMIN_SECRET_KEY}=${OPENMETADATA__DATABASE_PASSWORD} \
+		--type=kubernetes.io/basic-auth \
+		-n ${OPENMETADATA__NAMESPACE}
+	-@kubectl create secret generic ${AIRFLOW__ADMIN_SECRET} \
+		--from-literal=username=${AIRFLOW__ADMIN_USERNAME} \
+		--from-literal=${AIRFLOW__ADMIN_SECRET_KEY}=${AIRFLOW__ADMIN_PASSWORD} \
+		--type=kubernetes.io/basic-auth \
+		-n ${OPENMETADATA__NAMESPACE}
+	@helm upgrade --install openmetadata helm/openmetadata \
+		-n ${OPENMETADATA__NAMESPACE} --create-namespace \
+		--set openmetadata.config.authentication.enabled=true \
+		--set openmetadata.config.openmetadata.port=${OPENMETADATA__HTTP_PORT} \
+		--set service.port=${OPENMETADATA__HTTP_PORT} \
+		--set openmetadata.config.database.host=${OPENMETADATA__DATABASE_HOST} \
+		--set openmetadata.config.database.port=${OPENMETADATA__DATABASE_PORT} \
+		--set openmetadata.config.database.driverClass=${OPENMETADATA__DATABASE_DRIVER_CLASS} \
+		--set openmetadata.config.database.dbScheme=${OPENMETADATA__DATABASE_PROTOCOL} \
+		--set openmetadata.config.database.databaseName=${OPENMETADATA__DATABASE_NAME} \
+		--set openmetadata.config.database.auth.username=${OPENMETADATA__DATABASE_USERNAME} \
+		--set openmetadata.config.database.auth.password.secretRef=${OPENMETADATA__ADMIN_SECRET}\
+		--set openmetadata.config.database.auth.password.secretKey=${OPENMETADATA__ADMIN_SECRET_KEY} \
+		--set openmetadata.config.database.dbParams="sslmode=disable" \
+		--set openmetadata.config.pipelineServiceClientConfig.auth.password.secretRef=${AIRFLOW__ADMIN_SECRET} \
+		--set openmetadata.config.pipelineServiceClientConfig.auth.password.secretKey=${AIRFLOW__ADMIN_SECRET_KEY} \
+		--set openmetadata.config.authorizer.principalDomain=${DOMAIN_HOST} \
+		--set openmetadata.config.authorizer.enforcePrincipalDomain=false \
+		--set openmetadata.config.jwtTokenConfiguration.jwtissuer=${DOMAIN_HOST} \
+		--set openmetadata.config.authentication.enabled=true \
+		--set openmetadata.config.authentication.clientType=public \
+		--set openmetadata.config.authentication.provider=custom-oidc \
+		--set openmetadata.config.authentication.publicKeys[0]=http://openmetadata.${OPENMETADATA__NAMESPACE}.svc.cluster.local:${OPENMETADATA__HTTP_PORT}/api/v1/system/config/jwks \
+		--set openmetadata.config.authentication.publicKeys[1]=http://keycloak.${KEYCLOAK__NAMESPACE}.svc.cluster.local:${KEYCLOAK__HTTP_PORT}/realms/${KEYCLOAK__REALM_NAME}/protocol/openid-connect/certs \
+		--set openmetadata.config.authentication.authority=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME} \
+		--set openmetadata.config.authentication.clientId=${OPENMETADATA__OIDC_CLIENT_ID} \
+		--set openmetadata.config.authentication.callbackUrl=https://openmetadata.${DOMAIN_HOST}/callback
+	@$(MAKE) openmetadata-vs
+	@echo "✅ Openmetadata installed!"
+
+destroy-openmetadata: ## Destroy openmetadata chart
+	@helm uninstall openmetadata -n ${OPENMETADATA__NAMESPACE}
+	@$(MAKE) destroy-openmetadata-vs
+	@$(MAKE) destroy-database name=${OPENMETADATA__DATABASE_NAME}
+	@echo "✅ Openmetadata uninstalled!"
+
+
+# Openmetadata OIDC implicit flow
+#		--set openmetadata.config.authentication.clientType=public \
+#		--set openmetadata.config.authentication.authority=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME} \
+#		--set openmetadata.config.authentication.publicKeys[0]=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME}/protocol/openid-connect/certs \
+#		--set openmetadata.config.authentication.clientId=${OPENMETADATA__OIDC_CLIENT_ID} \
+#		--set openmetadata.config.authentication.callbackUrl=https://openmetadata.${DOMAIN_HOST}/callback
+
+# Openmetdata OIDC confidential flow
+#	 	--set openmetadata.config.authentication.oidcConfiguration.oidcType=Keycloak \
+#		--set openmetadata.config.authentication.oidcConfiguration.clientId=${OPENMETADATA__OIDC_CLIENT_ID}
+#		--set openmetadata.config.authentication.oidcConfiguration.clientSecret=${OPENMETADATA__OIDC_CLIENT_SECRET}
+#		--set openmetadata.config.authentication.oidcConfiguration.scope="openid email profile"
+#		--set openmetadata.config.authentication.oidcConfiguration.discoveryUri=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME}/.well-known/openid-configuration
+#		--set openmetadata.config.authentication.oidcConfiguration.callbackUrl=https://openmetadata.${DOMAIN_HOST}/callback
+#		--set openmetadata.config.authentication.oidcConfiguration.serverUrl=https://openmetadata.${DOMAIN_HOST}

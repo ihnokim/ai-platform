@@ -763,13 +763,46 @@ destroy-openmetadata: ## Destroy openmetadata chart
 	@$(MAKE) destroy-database name=${OPENMETADATA__DATABASE_NAME}
 	@echo "✅ Openmetadata uninstalled!"
 
+add-opensearch-repo: ## Add opensearch repo
+	@helm repo add opensearch https://opensearch-project.github.io/helm-charts/
+	@helm repo update
 
-# Openmetadata OIDC implicit flow
-#		--set openmetadata.config.authentication.clientType=public \
-#		--set openmetadata.config.authentication.authority=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME} \
-#		--set openmetadata.config.authentication.publicKeys[0]=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME}/protocol/openid-connect/certs \
-#		--set openmetadata.config.authentication.clientId=${OPENMETADATA__OIDC_CLIENT_ID} \
-#		--set openmetadata.config.authentication.callbackUrl=https://openmetadata.${DOMAIN_HOST}/callback
+install-opensearch: ## Install opensearch chart
+	@if [ ! -f "helm/opensearch/Chart.yaml" ]; then \
+		echo "📦 Downloading opensearch/opensearch chart..."; \
+		$(MAKE) add-opensearch-repo; \
+		mkdir -p helm; \
+		helm pull opensearch/opensearch --untar --untardir helm; \
+		echo "✅ opensearch/opensearch chart downloaded to helm/opensearch/"; \
+	else \
+		echo "✅ opensearch/opensearch chart already exists (helm/opensearch/Chart.yaml found)"; \
+	fi
+
+opensearch-vs: ## Deploy opensearch virtual service
+	@set -a && source .env && set +a && envsubst < manifests/opensearch-vs.yaml | kubectl apply -f -
+	@echo "✅ Opensearch virtual service deployed!"
+
+destroy-opensearch-vs: ## Destroy opensearch virtual service
+	@kubectl delete virtualservice opensearch -n ${OPENSEARCH__NAMESPACE}
+	@echo "✅ Opensearch virtual service destroyed!"
+
+opensearch: install-opensearch ## Install opensearch chart
+	@helm upgrade --install opensearch helm/opensearch \
+		-n ${OPENSEARCH__NAMESPACE} --create-namespace \
+		--set extraEnvs[0].name=OPENSEARCH_INITIAL_ADMIN_PASSWORD \
+		--set extraEnvs[0].value=${OPENSEARCH__ADMIN_PASSWORD} \
+		--set extraEnvs[1].name=plugins.security.ssl.http.enabled \
+		--set-string extraEnvs[1].value=false
+	@$(MAKE) opensearch-vs
+	@echo "✅ Opensearch installed!"
+
+# Opensearch HTTP 연결 관련 issue 참고
+# https://github.com/opensearch-project/helm-charts/issues/610#issuecomment-2564864930
+
+destroy-opensearch: ## Destroy opensearch chart
+	@helm uninstall opensearch -n ${OPENSEARCH__NAMESPACE}
+	@$(MAKE) destroy-opensearch-vs
+	@echo "✅ Opensearch uninstalled!"
 
 # Openmetdata OIDC confidential flow
 #	 	--set openmetadata.config.authentication.oidcConfiguration.oidcType=Keycloak \

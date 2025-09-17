@@ -411,20 +411,20 @@ install-cnpg: install-cnpg-cloudnative-pg install-cnpg-cluster ## Install cnpg c
 cnpg: install-cnpg ## Install cnpg charts
 	@helm upgrade --install cnpg-cloudnative-pg helm/cnpg/cloudnative-pg -n ${CNPG__OPERATOR_NAMESPACE} --create-namespace --wait
 #	--set config.clusterWide=false \
-#	--set config.data.WATCH_NAMESPACE=${CNPG__CLUSTER_NAMESPACE}
+#	--set config.data.WATCH_NAMESPACE=${CNPG__DATABASE_NAMESPACE}
 # TODO: enable backups
 # TODO: enable recovery
 	@echo "🔐 Creating admin user secret..."
-	@kubectl create namespace ${CNPG__CLUSTER_NAMESPACE} || true
+	@kubectl create namespace ${CNPG__DATABASE_NAMESPACE} || true
 	@kubectl create secret generic ${CNPG__ADMIN_SECRET} \
 		--from-literal=username=${CNPG__ADMIN_USERNAME} \
 		--from-literal=password=${CNPG__ADMIN_PASSWORD} \
 		--type=kubernetes.io/basic-auth \
-		-n ${CNPG__CLUSTER_NAMESPACE} \
+		-n ${CNPG__DATABASE_NAMESPACE} \
 		--dry-run=client -o yaml | kubectl apply -f -
 	@echo "✅ Admin user secret created!"
 	@helm upgrade --install cnpg-cluster helm/cnpg/cluster \
-		-n ${CNPG__CLUSTER_NAMESPACE} --create-namespace \
+		-n ${CNPG__DATABASE_NAMESPACE} --create-namespace \
 		--set cluster.initdb.database=${CNPG__DATABASE_NAME} \
 		--set cluster.initdb.owner=${CNPG__ADMIN_USERNAME} \
 		--set cluster.initdb.secret.name=${CNPG__ADMIN_SECRET} \
@@ -451,9 +451,9 @@ cnpg: install-cnpg ## Install cnpg charts
 
 destroy-cnpg: ## Destroy cnpg cluster and operator
 	@echo "🗑️  Removing CNPG cluster..."
-	@helm uninstall cnpg-cluster -n ${CNPG__CLUSTER_NAMESPACE} 2>/dev/null || echo "cnpg-cluster not found"
+	@helm uninstall cnpg-cluster -n ${CNPG__DATABASE_NAMESPACE} 2>/dev/null || echo "cnpg-cluster not found"
 	@echo "🗑️  Removing admin secret..."
-	@kubectl delete secret ${CNPG__ADMIN_SECRET} -n ${CNPG__CLUSTER_NAMESPACE} 2>/dev/null || echo "runway-admin-secret not found"
+	@kubectl delete secret ${CNPG__ADMIN_SECRET} -n ${CNPG__DATABASE_NAMESPACE} 2>/dev/null || echo "runway-admin-secret not found"
 	@echo "🗑️  Removing CNPG operator..."
 	@helm uninstall cnpg-cloudnative-pg -n ${CNPG__OPERATOR_NAMESPACE} 2>/dev/null || echo "cnpg-cloudnative-pg not found"
 	@echo "✅ CNPG cleanup complete!"
@@ -465,15 +465,15 @@ database: ## Create database
 		exit 1; \
 	fi
 	@echo "🔐 Creating database: ${name}..."
-	@CNPG_POD_NAME=$$(kubectl get endpoints ${CNPG__RW_SERVICE} -n ${CNPG__CLUSTER_NAMESPACE} -o jsonpath='{.subsets[0].addresses[0].targetRef.name}' 2>/dev/null); \
+	@CNPG_POD_NAME=$$(kubectl get endpoints ${CNPG__RW_SERVICE} -n ${CNPG__DATABASE_NAMESPACE} -o jsonpath='{.subsets[0].addresses[0].targetRef.name}' 2>/dev/null); \
 	if [ -z "$$CNPG_POD_NAME" ]; then \
-		echo "❌ Error: No pod found for service ${CNPG__RW_SERVICE} in namespace ${CNPG__CLUSTER_NAMESPACE}"; \
+		echo "❌ Error: No pod found for service ${CNPG__RW_SERVICE} in namespace ${CNPG__DATABASE_NAMESPACE}"; \
 		exit 1; \
 	fi; \
 	echo "🔍 Using pod: $$CNPG_POD_NAME (from service ${CNPG__RW_SERVICE})"; \
-	kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"CREATE DATABASE ${name};\"" 2>/dev/null && echo "✅ Database ${name} created" || echo "⚠️  Database ${name} already exists"
+	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"CREATE DATABASE ${name};\"" 2>/dev/null && echo "✅ Database ${name} created" || echo "⚠️  Database ${name} already exists"
 #	@echo "🔐 Granting privileges to ${name}..."
-#	@kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"GRANT ALL PRIVILEGES ON DATABASE ${name} TO ${CNPG__ADMIN_USERNAME};\""
+#	@kubectl exec -n ${CNPG__DATABASE_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"GRANT ALL PRIVILEGES ON DATABASE ${name} TO ${CNPG__ADMIN_USERNAME};\""
 
 destroy-database: ## Destroy database
 	@if [ -z "${name}" ]; then \
@@ -482,13 +482,13 @@ destroy-database: ## Destroy database
 		exit 1; \
 	fi
 	@echo "🗑️  Removing database: ${name}..."
-	@CNPG_POD_NAME=$$(kubectl get endpoints ${CNPG__RW_SERVICE} -n ${CNPG__CLUSTER_NAMESPACE} -o jsonpath='{.subsets[0].addresses[0].targetRef.name}' 2>/dev/null); \
+	@CNPG_POD_NAME=$$(kubectl get endpoints ${CNPG__RW_SERVICE} -n ${CNPG__DATABASE_NAMESPACE} -o jsonpath='{.subsets[0].addresses[0].targetRef.name}' 2>/dev/null); \
 	if [ -z "$$CNPG_POD_NAME" ]; then \
-		echo "❌ Error: No pod found for service ${CNPG__RW_SERVICE} in namespace ${CNPG__CLUSTER_NAMESPACE}"; \
+		echo "❌ Error: No pod found for service ${CNPG__RW_SERVICE} in namespace ${CNPG__DATABASE_NAMESPACE}"; \
 		exit 1; \
 	fi; \
 	echo "🔍 Using pod: $$CNPG_POD_NAME (from service ${CNPG__RW_SERVICE})"; \
-	kubectl exec -n ${CNPG__CLUSTER_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"DROP DATABASE IF EXISTS ${name};\"" 2>/dev/null && echo "✅ Database ${name} destroyed" || echo "⚠️  Database ${name} not found"
+	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"DROP DATABASE IF EXISTS ${name};\"" 2>/dev/null && echo "✅ Database ${name} destroyed" || echo "⚠️  Database ${name} not found"
 
 add-keycloak-repo: ## Add keycloak repo
 	@helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -663,6 +663,14 @@ destroy-airflow-vs: ## Destroy airflow virtual service
 
 airflow: install-airflow ## Install airflow chart
 # --set brokerdata.brokerUrl=redis://redis-master:6379/0
+	@$(MAKE) database name=${AIRFLOW__DATABASE_NAME}
+	-@kubectl create namespace ${AIRFLOW__NAMESPACE} || true
+	-@kubectl create namespace ${OPENMETADATA__NAMESPACE} || true
+	-@kubectl create secret generic ${AIRFLOW__ADMIN_SECRET} \
+		--from-literal=username=${AIRFLOW__ADMIN_USERNAME} \
+		--from-literal=${AIRFLOW__ADMIN_SECRET_KEY}=${AIRFLOW__ADMIN_PASSWORD} \
+		--type=kubernetes.io/basic-auth \
+		-n ${OPENMETADATA__NAMESPACE}
 	@helm upgrade --install airflow helm/airflow \
 		-n ${AIRFLOW__NAMESPACE} --create-namespace \
 		--set webserver.enabled=true \
@@ -674,6 +682,7 @@ airflow: install-airflow ## Install airflow chart
 		--set webserver.defaultUser.lastName=${AIRFLOW__ADMIN_LAST_NAME} \
 		--set webserver.defaultUser.role=Admin \
 		--set postgresql.enabled=false \
+		--set executor=${AIRFLOW__EXECUTOR} \
 		--set data.metadataConnection.host=${AIRFLOW__DATABASE_HOST} \
 		--set data.metadataConnection.port=${AIRFLOW__DATABASE_PORT} \
 		--set data.metadataConnection.db=${AIRFLOW__DATABASE_NAME} \
@@ -687,8 +696,11 @@ airflow: install-airflow ## Install airflow chart
 	@echo "✅ Airflow installed!"
 
 destroy-airflow: ## Destroy airflow chart
-	@helm uninstall airflow -n ${AIRFLOW__NAMESPACE}
-	@$(MAKE) destroy-airflow-vs
+	@helm uninstall airflow -n ${AIRFLOW__NAMESPACE} --wait
+	-@$(MAKE) destroy-airflow-vs
+	-@kubectl delete pvc -l release=airflow -n ${AIRFLOW__NAMESPACE}
+	-@kubectl delete secret ${AIRFLOW__ADMIN_SECRET} -n ${OPENMETADATA__NAMESPACE}
+	-@$(MAKE) destroy-database name=${AIRFLOW__DATABASE_NAME}
 	@echo "✅ Airflow uninstalled!"
 
 add-openmetadata-repo: ## Add openmetadata repo
@@ -722,11 +734,6 @@ openmetadata: install-openmetadata ## Install openmetadata chart
 		--from-literal=${OPENMETADATA__ADMIN_SECRET_KEY}=${OPENMETADATA__DATABASE_PASSWORD} \
 		--type=kubernetes.io/basic-auth \
 		-n ${OPENMETADATA__NAMESPACE}
-	-@kubectl create secret generic ${AIRFLOW__ADMIN_SECRET} \
-		--from-literal=username=${AIRFLOW__ADMIN_USERNAME} \
-		--from-literal=${AIRFLOW__ADMIN_SECRET_KEY}=${AIRFLOW__ADMIN_PASSWORD} \
-		--type=kubernetes.io/basic-auth \
-		-n ${OPENMETADATA__NAMESPACE}
 	@helm upgrade --install openmetadata helm/openmetadata \
 		-n ${OPENMETADATA__NAMESPACE} --create-namespace \
 		--set openmetadata.config.authentication.enabled=true \
@@ -741,8 +748,6 @@ openmetadata: install-openmetadata ## Install openmetadata chart
 		--set openmetadata.config.database.auth.password.secretRef=${OPENMETADATA__ADMIN_SECRET}\
 		--set openmetadata.config.database.auth.password.secretKey=${OPENMETADATA__ADMIN_SECRET_KEY} \
 		--set openmetadata.config.database.dbParams="sslmode=disable" \
-		--set openmetadata.config.pipelineServiceClientConfig.auth.password.secretRef=${AIRFLOW__ADMIN_SECRET} \
-		--set openmetadata.config.pipelineServiceClientConfig.auth.password.secretKey=${AIRFLOW__ADMIN_SECRET_KEY} \
 		--set openmetadata.config.authorizer.principalDomain=${DOMAIN_HOST} \
 		--set openmetadata.config.authorizer.enforcePrincipalDomain=false \
 		--set openmetadata.config.jwtTokenConfiguration.jwtissuer=${DOMAIN_HOST} \
@@ -753,14 +758,35 @@ openmetadata: install-openmetadata ## Install openmetadata chart
 		--set openmetadata.config.authentication.publicKeys[1]=http://keycloak.${KEYCLOAK__NAMESPACE}.svc.cluster.local:${KEYCLOAK__HTTP_PORT}/realms/${KEYCLOAK__REALM_NAME}/protocol/openid-connect/certs \
 		--set openmetadata.config.authentication.authority=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME} \
 		--set openmetadata.config.authentication.clientId=${OPENMETADATA__OIDC_CLIENT_ID} \
-		--set openmetadata.config.authentication.callbackUrl=https://openmetadata.${DOMAIN_HOST}/callback
+		--set openmetadata.config.authentication.callbackUrl=https://openmetadata.${DOMAIN_HOST}/callback \
+		--set openmetadata.config.elasticsearch.enabled=true \
+		--set openmetadata.config.elasticsearch.host=opensearch-cluster-master.${OPENSEARCH__NAMESPACE}.svc.cluster.local \
+		--set openmetadata.config.elasticsearch.port=${OPENSEARCH__HTTP_PORT} \
+		--set openmetadata.config.elasticsearch.scheme=http \
+		--set openmetadata.config.elasticsearch.auth.enabled=true \
+		--set openmetadata.config.elasticsearch.auth.username=admin \
+		--set openmetadata.config.elasticsearch.auth.password.secretRef=${OPENSEARCH__ADMIN_SECRET} \
+		--set openmetadata.config.elasticsearch.auth.password.secretKey=${OPENSEARCH__ADMIN_SECRET_KEY} \
+		--set openmetadata.config.elasticsearch.searchType=opensearch \
+		--set openmetadata.config.pipelineServiceClientConfig.apiEndpoint=http://airflow.${AIRFLOW__NAMESPACE}.svc.cluster.local:${AIRFLOW__HTTP_PORT} \
+		--set openmetadata.config.pipelineServiceClientConfig.metadataApiEndpoint=http://openmetadata.${OPENMETADATA__NAMESPACE}.svc.cluster.local:${OPENMETADATA__HTTP_PORT}/api \
+		--set openmetadata.config.pipelineServiceClientConfig.verifySsl=no-ssl \
+		--set openmetadata.config.pipelineServiceClientConfig.hostIp= \
+		--set openmetadata.config.pipelineServiceClientConfig.ingestionIpInfoEnabled=false \
+		--set openmetadata.config.pipelineServiceClientConfig.healthCheckInterval=300 \
+		--set openmetadata.config.pipelineServiceClientConfig.sslCertificatePath=/no/path \
+		--set openmetadata.config.pipelineServiceClientConfig.auth.enabled=true \
+		--set openmetadata.config.pipelineServiceClientConfig.auth.username=${AIRFLOW__ADMIN_USERNAME} \
+		--set openmetadata.config.pipelineServiceClientConfig.auth.password.secretRef=${AIRFLOW__ADMIN_SECRET} \
+		--set openmetadata.config.pipelineServiceClientConfig.auth.password.secretKey=${AIRFLOW__ADMIN_SECRET_KEY}
 	@$(MAKE) openmetadata-vs
 	@echo "✅ Openmetadata installed!"
 
 destroy-openmetadata: ## Destroy openmetadata chart
-	@helm uninstall openmetadata -n ${OPENMETADATA__NAMESPACE}
-	@$(MAKE) destroy-openmetadata-vs
+	@helm uninstall openmetadata -n ${OPENMETADATA__NAMESPACE} --wait
+	-@$(MAKE) destroy-openmetadata-vs
 	@$(MAKE) destroy-database name=${OPENMETADATA__DATABASE_NAME}
+	@kubectl delete secret ${OPENMETADATA__ADMIN_SECRET} -n ${OPENMETADATA__NAMESPACE}
 	@echo "✅ Openmetadata uninstalled!"
 
 add-opensearch-repo: ## Add opensearch repo
@@ -787,6 +813,13 @@ destroy-opensearch-vs: ## Destroy opensearch virtual service
 	@echo "✅ Opensearch virtual service destroyed!"
 
 opensearch: install-opensearch ## Install opensearch chart
+	-@kubectl create namespace ${OPENSEARCH__NAMESPACE} || true
+	-@kubectl create namespace ${OPENMETADATA__NAMESPACE} || true
+	-@kubectl create secret generic ${OPENSEARCH__ADMIN_SECRET} \
+		--from-literal=username=${OPENSEARCH__ADMIN_USERNAME} \
+		--from-literal=${OPENSEARCH__ADMIN_SECRET_KEY}=${OPENSEARCH__ADMIN_PASSWORD} \
+		--type=kubernetes.io/basic-auth \
+		-n ${OPENMETADATA__NAMESPACE}
 	@helm upgrade --install opensearch helm/opensearch \
 		-n ${OPENSEARCH__NAMESPACE} --create-namespace \
 		--set extraEnvs[0].name=OPENSEARCH_INITIAL_ADMIN_PASSWORD \
@@ -800,6 +833,7 @@ opensearch: install-opensearch ## Install opensearch chart
 # https://github.com/opensearch-project/helm-charts/issues/610#issuecomment-2564864930
 
 destroy-opensearch: ## Destroy opensearch chart
+	-@kubectl delete secret ${OPENSEARCH__ADMIN_SECRET} -n ${OPENSEARCH__NAMESPACE}
 	@helm uninstall opensearch -n ${OPENSEARCH__NAMESPACE}
 	@$(MAKE) destroy-opensearch-vs
 	@echo "✅ Opensearch uninstalled!"

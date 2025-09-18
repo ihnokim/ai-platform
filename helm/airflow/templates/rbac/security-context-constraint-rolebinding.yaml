@@ -85,14 +85,9 @@ subjects:
     name: {{ include "createUserJob.serviceAccountName" . }}
     namespace: "{{ .Release.Namespace }}"
   {{- end }}
-  {{- if .Values.cleanup.enabled }}
+  {{- if and .Values.cleanup.enabled }}
   - kind: ServiceAccount
     name: {{ include "cleanup.serviceAccountName" . }}
-    namespace: "{{ .Release.Namespace }}"
-  {{- end }}
-  {{- if .Values.dagProcessor.enabled }}
-  - kind: ServiceAccount
-    name: {{ include "dagProcessor.serviceAccountName" . }}
     namespace: "{{ .Release.Namespace }}"
   {{- end }}
 {{- end }}

@@ -18,7 +18,7 @@
 */}}
 
 ################################
-## Airflow API Server NetworkPolicy
+## Airflow API server NetworkPolicy
 #################################
 {{- if semverCompare ">=3.0.0" .Values.airflowVersion }}
 {{- if .Values.networkPolicies.enabled }}

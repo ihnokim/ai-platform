@@ -646,11 +646,11 @@ add-airflow-repo: ## Add airflow repo
 
 install-airflow: ## Install airflow chart
 	@if [ ! -f "helm/airflow/Chart.yaml" ]; then \
-		echo "📦 Downloading apache-airflow/airflow chart..."; \
+		echo "📦 Downloading apache-airflow/airflow chart version ${AIRFLOW__CHART_VERSION}..."; \
 		$(MAKE) add-airflow-repo; \
 		mkdir -p helm; \
-		helm pull apache-airflow/airflow --untar --untardir helm; \
-		echo "✅ apache-airflow/airflow chart downloaded to helm/airflow/"; \
+		helm pull apache-airflow/airflow --version ${AIRFLOW__CHART_VERSION} --untar --untardir helm; \
+		echo "✅ apache-airflow/airflow chart version ${AIRFLOW__CHART_VERSION} downloaded to helm/airflow/"; \
 	fi
 
 airflow-vs: ## Deploy airflow virtual service
@@ -691,7 +691,14 @@ airflow: install-airflow ## Install airflow chart
 		--set data.metadataConnection.pass=${AIRFLOW__DATABASE_PASSWORD} \
 		--set data.metadataConnection.sslmode=${AIRFLOW__DATABASE_SSL_MODE} \
 		--set ports.airflowUI=${AIRFLOW__HTTP_PORT} \
-		--set workers.replicas=${AIRFLOW__WORKERS_REPLICAS}
+		--set ports.apiServer=${AIRFLOW__HTTP_PORT} \
+		--set workers.replicas=${AIRFLOW__WORKERS_REPLICAS} \
+		--set scheduler.replicas=${AIRFLOW__SCHEDULER_REPLICAS} \
+		--set webserver.replicas=${AIRFLOW__WEBSERVER_REPLICAS} \
+		--set triggerer.replicas=${AIRFLOW__TRIGGERER_REPLICAS} \
+		--set images.airflow.repository=${AIRFLOW__IMAGE_REPOSITORY} \
+		--set images.airflow.tag=${AIRFLOW__IMAGE_TAG} \
+		-f manifests/airflow-config.yaml
 	@$(MAKE) airflow-vs
 	@echo "✅ Airflow installed!"
 
@@ -768,7 +775,7 @@ openmetadata: install-openmetadata ## Install openmetadata chart
 		--set openmetadata.config.elasticsearch.auth.password.secretRef=${OPENSEARCH__ADMIN_SECRET} \
 		--set openmetadata.config.elasticsearch.auth.password.secretKey=${OPENSEARCH__ADMIN_SECRET_KEY} \
 		--set openmetadata.config.elasticsearch.searchType=opensearch \
-		--set openmetadata.config.pipelineServiceClientConfig.apiEndpoint=http://airflow.${AIRFLOW__NAMESPACE}.svc.cluster.local:${AIRFLOW__HTTP_PORT} \
+		--set openmetadata.config.pipelineServiceClientConfig.apiEndpoint=http://airflow-webserver.${AIRFLOW__NAMESPACE}.svc.cluster.local:${AIRFLOW__HTTP_PORT} \
 		--set openmetadata.config.pipelineServiceClientConfig.metadataApiEndpoint=http://openmetadata.${OPENMETADATA__NAMESPACE}.svc.cluster.local:${OPENMETADATA__HTTP_PORT}/api \
 		--set openmetadata.config.pipelineServiceClientConfig.verifySsl=no-ssl \
 		--set openmetadata.config.pipelineServiceClientConfig.hostIp= \

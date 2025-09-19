@@ -703,6 +703,15 @@ airflow: install-airflow ## Install airflow chart
 		--set triggerer.replicas=${AIRFLOW__TRIGGERER_REPLICAS} \
 		--set images.airflow.repository=${AIRFLOW__IMAGE_REPOSITORY} \
 		--set images.airflow.tag=${AIRFLOW__IMAGE_TAG} \
+		--set dags.persistence.enabled=true \
+		--set dags.persistence.storageClassName=${RWX_STORAGE_CLASS_NAME} \
+		--set dags.persistence.accessMode=ReadWriteMany \
+		--set dags.persistence.size=1Gi \
+		--set webserver.extraVolumes[0].name=dags \
+		--set webserver.extraVolumes[0].persistentVolumeClaim.claimName=airflow-dags \
+		--set webserver.extraVolumeMounts[0].name=dags \
+		--set webserver.extraVolumeMounts[0].mountPath=/opt/airflow/dags \
+		--set webserver.extraVolumeMounts[0].readOnly=false \
 		-f manifests/airflow-config.yaml
 	@$(MAKE) airflow-vs
 	@echo "✅ Airflow installed!"

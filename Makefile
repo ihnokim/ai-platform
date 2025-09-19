@@ -771,6 +771,7 @@ openmetadata: install-openmetadata ## Install openmetadata chart
 		--set openmetadata.config.database.dbParams="sslmode=disable" \
 		--set openmetadata.config.authorizer.principalDomain=${DOMAIN_HOST} \
 		--set openmetadata.config.authorizer.enforcePrincipalDomain=false \
+		--set openmetadata.config.authorizer.useRolesFromProvider=true \
 		--set openmetadata.config.jwtTokenConfiguration.jwtissuer=${DOMAIN_HOST} \
 		--set openmetadata.config.authentication.enabled=true \
 		--set openmetadata.config.authentication.clientType=public \
@@ -856,8 +857,9 @@ opensearch: install-opensearch ## Install opensearch chart
 
 destroy-opensearch: ## Destroy opensearch chart
 	-@kubectl delete secret ${OPENSEARCH__ADMIN_SECRET} -n ${OPENMETADATA__NAMESPACE}
-	@helm uninstall opensearch -n ${OPENSEARCH__NAMESPACE}
-	@$(MAKE) destroy-opensearch-vs
+	-@helm uninstall opensearch -n ${OPENSEARCH__NAMESPACE}
+	-@$(MAKE) destroy-opensearch-vs
+	-@kubectl delete pvc -l app.kubernetes.io/instance=opensearch -n ${OPENSEARCH__NAMESPACE}
 	@echo "✅ Opensearch uninstalled!"
 
 # Openmetdata OIDC confidential flow

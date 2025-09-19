@@ -430,10 +430,13 @@ cnpg: install-cnpg ## Install cnpg charts
 		--set cluster.initdb.secret.name=${CNPG__ADMIN_SECRET} \
 		--set cluster.enableSuperuserAccess=true \
 		--set cluster.initdb.postInitSQL[0]="ALTER USER ${CNPG__ADMIN_USERNAME} WITH SUPERUSER;" \
+		--set cluster.initdb.postInitSQL[1]="CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" \
+		--set cluster.initdb.postInitSQL[2]="CREATE EXTENSION IF NOT EXISTS pgcrypto;" \
+		--set cluster.postgresql.shared_preload_libraries[0]=pg_stat_statements \
 		--set poolers[0].name=rw \
 		--set poolers[0].type=rw \
-		--set poolers[0].poolMode=transaction \
-		--set poolers[0].instances=3 \
+		--set poolers[0].poolMode=session \
+		--set poolers[0].instances=${CNPG__POOLER_RW_REPLICAS} \
 		--set-string poolers[0].parameters.max_client_conn=100 \
 		--set-string poolers[0].parameters.default_pool_size=10 \
 		--set poolers[0].monitoring.enabled=false \
@@ -441,7 +444,7 @@ cnpg: install-cnpg ## Install cnpg charts
 		--set poolers[1].name=ro \
 		--set poolers[1].type=ro \
 		--set poolers[1].poolMode=transaction \
-		--set poolers[1].instances=3 \
+		--set poolers[1].instances=${CNPG__POOLER_RO_REPLICAS} \
 		--set-string poolers[1].parameters.max_client_conn=200 \
 		--set-string poolers[1].parameters.default_pool_size=20 \
 		--set poolers[1].monitoring.enabled=false \
@@ -488,7 +491,8 @@ destroy-database: ## Destroy database
 		exit 1; \
 	fi; \
 	echo "🔍 Using pod: $$CNPG_POD_NAME (from service ${CNPG__RW_SERVICE})"; \
-	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"DROP DATABASE IF EXISTS ${name};\"" 2>/dev/null && echo "✅ Database ${name} destroyed" || echo "⚠️  Database ${name} not found"
+	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${name}' AND pid<>pg_backend_pid();\"" 2>/dev/null && echo "✅ Closed connections to ${name}" || echo "⚠️  No connections to ${name} found"; \
+	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"DROP DATABASE IF EXISTS ${name};\"" 2>/dev/null && echo "✅ Database ${name} destroyed" || echo "⚠️  Database ${name} not found";
 
 add-keycloak-repo: ## Add keycloak repo
 	@helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -519,7 +523,8 @@ keycloak: install-keycloak ## Install keycloak chart
 	@$(MAKE) database name=${KEYCLOAK__DATABASE_NAME}
 	@helm upgrade --install keycloak helm/keycloak \
 		-n ${KEYCLOAK__NAMESPACE} --create-namespace \
-		--set replicaCount=3 \
+		--set image.repository=bitnamilegacy/keycloak \
+		--set replicaCount=${KEYCLOAK__REPLICAS} \
 		--set postgresql.enabled=false \
 		--set service.ports.http=${KEYCLOAK__HTTP_PORT} \
 		--set service.ports.https=${KEYCLOAK__HTTPS_PORT} \
@@ -840,7 +845,7 @@ opensearch: install-opensearch ## Install opensearch chart
 # https://github.com/opensearch-project/helm-charts/issues/610#issuecomment-2564864930
 
 destroy-opensearch: ## Destroy opensearch chart
-	-@kubectl delete secret ${OPENSEARCH__ADMIN_SECRET} -n ${OPENSEARCH__NAMESPACE}
+	-@kubectl delete secret ${OPENSEARCH__ADMIN_SECRET} -n ${OPENMETADATA__NAMESPACE}
 	@helm uninstall opensearch -n ${OPENSEARCH__NAMESPACE}
 	@$(MAKE) destroy-opensearch-vs
 	@echo "✅ Opensearch uninstalled!"
@@ -853,3 +858,66 @@ destroy-opensearch: ## Destroy opensearch chart
 #		--set openmetadata.config.authentication.oidcConfiguration.discoveryUri=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME}/.well-known/openid-configuration
 #		--set openmetadata.config.authentication.oidcConfiguration.callbackUrl=https://openmetadata.${DOMAIN_HOST}/callback
 #		--set openmetadata.config.authentication.oidcConfiguration.serverUrl=https://openmetadata.${DOMAIN_HOST}
+
+add-seaweedfs-repo: ## Add seaweedfs repo
+	@helm repo add seaweedfs https://seaweedfs.github.io/seaweedfs/helm
+	@helm repo update
+
+install-seaweedfs:
+	@if [ ! -f "helm/seaweedfs/Chart.yaml" ]; then \
+		echo "📦 Downloading seaweedfs/seaweedfs chart..."; \
+		$(MAKE) add-seaweedfs-repo; \
+		mkdir -p helm; \
+		helm pull seaweedfs/seaweedfs --untar --untardir helm; \
+		echo "✅ seaweedfs/seaweedfs chart downloaded to helm/seaweedfs/"; \
+	else \
+		echo "✅ seaweedfs/seaweedfs chart already exists (helm/seaweedfs/Chart.yaml found)"; \
+	fi
+
+seaweedfs: install-seaweedfs
+	@echo "🗄️ Installing SeaweedFS for object storage..."
+	@set -a && source .env && set +a && envsubst < manifests/seaweedfs-config.yaml | helm upgrade --install seaweedfs seaweedfs/seaweedfs \
+		-n ${SEAWEEDFS__NAMESPACE} --create-namespace -f -
+	@echo "✅ SeaweedFS installation completed"
+
+add-seaweedfs-csi-driver-repo: ## Add seaweedfs-csi-driver repo
+	@helm repo add seaweedfs-csi-driver https://seaweedfs.github.io/seaweedfs-csi-driver/helm
+	@helm repo update
+
+install-seaweedfs-csi-driver:
+	@if [ ! -f "helm/seaweedfs-csi-driver/Chart.yaml" ]; then \
+		echo "📦 Downloading seaweedfs-csi-driver/seaweedfs-csi-driver chart..."; \
+		$(MAKE) add-seaweedfs-csi-driver-repo; \
+		mkdir -p helm; \
+		helm pull seaweedfs-csi-driver/seaweedfs-csi-driver --untar --untardir helm; \
+		echo "✅ seaweedfs-csi-driver/seaweedfs-csi-driver chart downloaded to helm/seaweedfs-csi-driver/"; \
+	else \
+		echo "✅ seaweedfs-csi-driver/seaweedfs-csi-driver chart already exists (helm/seaweedfs-csi-driver/Chart.yaml found)"; \
+	fi
+
+seaweedfs-csi-driver: install-seaweedfs-csi-driver
+	@echo "💾 Installing SeaweedFS CSI Driver for RWX storage..."
+	@helm upgrade --install seaweedfs-csi-driver seaweedfs-csi-driver/seaweedfs-csi-driver --version 0.2.3 \
+		--namespace ${SEAWEEDFS__NAMESPACE} --create-namespace \
+		--set seaweedfsFiler=seaweedfs-filer.${SEAWEEDFS__NAMESPACE}.svc.cluster.local:${SEAWEEDFS__FILER_HTTP_PORT} \
+		--set csiAttacher.enabled=false \
+		--set node.enabled=true \
+		--set node.updateStrategy.type=OnDelete \
+		--set storageClassName=${RWX_STORAGE_CLASS_NAME}
+	@if kubectl get storageclass ${RWX_STORAGE_CLASS_NAME} >/dev/null 2>&1; then \
+		echo "✅ SeaweedFS StorageClass is available (RWX support)"; \
+	else \
+		echo "❌ SeaweedFS StorageClass not found"; \
+		echo "📋 Available StorageClasses:"; \
+		kubectl get storageclass; \
+		exit 1; \
+	fi
+	@echo "✅ SeaweedFS CSI Driver installation completed"
+
+destroy-seaweedfs-csi-driver: ## Destroy seaweedfs-csi-driver
+	@helm uninstall seaweedfs-csi-driver -n ${SEAWEEDFS__NAMESPACE}
+	@echo "✅ SeaweedFS CSI Driver uninstalled!"
+
+destroy-seaweedfs: ## Destroy seaweedfs
+	@helm uninstall seaweedfs -n ${SEAWEEDFS__NAMESPACE}
+	@echo "✅ SeaweedFS uninstalled!"

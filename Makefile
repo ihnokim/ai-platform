@@ -785,7 +785,7 @@ openmetadata: install-openmetadata ## Install openmetadata chart
 		--set openmetadata.config.elasticsearch.port=${OPENSEARCH__HTTP_PORT} \
 		--set openmetadata.config.elasticsearch.scheme=http \
 		--set openmetadata.config.elasticsearch.auth.enabled=true \
-		--set openmetadata.config.elasticsearch.auth.username=admin \
+		--set openmetadata.config.elasticsearch.auth.username=${OPENSEARCH__ADMIN_USERNAME} \
 		--set openmetadata.config.elasticsearch.auth.password.secretRef=${OPENSEARCH__ADMIN_SECRET} \
 		--set openmetadata.config.elasticsearch.auth.password.secretKey=${OPENSEARCH__ADMIN_SECRET_KEY} \
 		--set openmetadata.config.elasticsearch.searchType=opensearch \
@@ -846,7 +846,8 @@ opensearch: install-opensearch ## Install opensearch chart
 		--set extraEnvs[0].name=OPENSEARCH_INITIAL_ADMIN_PASSWORD \
 		--set extraEnvs[0].value=${OPENSEARCH__ADMIN_PASSWORD} \
 		--set extraEnvs[1].name=plugins.security.ssl.http.enabled \
-		--set-string extraEnvs[1].value=false
+		--set-string extraEnvs[1].value=false \
+		--set replicas=${OPENSEARCH__REPLICAS}
 	@$(MAKE) opensearch-vs
 	@echo "✅ Opensearch installed!"
 

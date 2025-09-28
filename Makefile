@@ -360,8 +360,8 @@ install-istio-gateway: ## Install istio/gateway chart
 
 install-istio: install-istio-base install-istio-istiod install-istio-gateway ## Install istio charts
 
-platform-gateway: deprecated-tls ## Deploy platform gateway chart
-	@helm upgrade --install platform-gateway helm/istio/platform-gateway \
+ai-platform-gateway: deprecated-tls ## Deploy AI platform gateway chart
+	@helm upgrade --install ai-platform-gateway helm/istio/ai-platform-gateway \
 		--namespace ${ISTIO__NAMESPACE} --create-namespace \
 		--set host=${DOMAIN_HOST} \
 		--set tls.enabled=true \
@@ -371,7 +371,7 @@ istio: install-istio ## Deploy istio base and istiod charts
 	@helm upgrade --install istio-base helm/istio/base -n ${ISTIO__NAMESPACE} --create-namespace
 	@helm upgrade --install istio-istiod helm/istio/istiod -n ${ISTIO__NAMESPACE} --create-namespace
 	@helm upgrade --install istio-gateway helm/istio/gateway -n ${ISTIO__NAMESPACE} --create-namespace
-	@$(MAKE) platform-gateway
+	@$(MAKE) ai-platform-gateway
 	@$(MAKE) internal-dns
 
 add-cnpg-repo: ## Add cnpg repo

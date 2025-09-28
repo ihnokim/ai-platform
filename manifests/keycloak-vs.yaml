@@ -5,7 +5,7 @@ metadata:
   namespace: ${KEYCLOAK__NAMESPACE}
 spec:
   gateways:
-    - ${ISTIO__NAMESPACE}/runway-gateway
+    - ${ISTIO__NAMESPACE}/ai-platform-gateway
   hosts:
     - keycloak.${DOMAIN_HOST}
   http:

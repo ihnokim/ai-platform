@@ -5,7 +5,7 @@ metadata:
   namespace: ${AIRFLOW__NAMESPACE}
 spec:
   gateways:
-    - ${ISTIO__NAMESPACE}/runway-gateway
+    - ${ISTIO__NAMESPACE}/ai-platform-gateway
   hosts:
     - airflow.${DOMAIN_HOST}
   http:

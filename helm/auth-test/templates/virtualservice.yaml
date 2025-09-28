@@ -8,7 +8,7 @@ metadata:
     {{- include "auth-test.labels" . | nindent 4 }}
 spec:
   gateways:
-    - {{ .Values.virtualService.istio.namespace }}/runway-gateway
+    - {{ .Values.virtualService.istio.namespace }}/ai-platform-gateway
   hosts:
 {{- include "auth-test.hosts" . | nindent 4 }}
   http:

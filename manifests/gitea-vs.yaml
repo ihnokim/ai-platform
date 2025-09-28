@@ -5,7 +5,7 @@ metadata:
   namespace: ${GITEA__NAMESPACE}
 spec:
   gateways:
-    - ${ISTIO__NAMESPACE}/runway-gateway
+    - ${ISTIO__NAMESPACE}/ai-platform-gateway
   hosts:
     - gitea.${DOMAIN_HOST}
   http:

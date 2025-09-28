@@ -96,7 +96,7 @@ main() {
             echo "  get-client-secret <client_id> [realm_name] [keycloak_url] [admin_token]" >&2
             echo "" >&2
             echo "Environment variables:" >&2
-            echo "  KEYCLOAK__URL (default: https://keycloak.runway.ai)" >&2
+            echo "  KEYCLOAK__URL (default: https://keycloak.platform.ai)" >&2
             echo "  KEYCLOAK__ADMIN_USERNAME (default: admin)" >&2
             echo "  KEYCLOAK__ADMIN_PASSWORD (default: string1!)" >&2
             echo "  KEYCLOAK__REALM_NAME (default: master)" >&2

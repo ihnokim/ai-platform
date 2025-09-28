@@ -5,7 +5,7 @@ metadata:
   namespace: ${OPENMETADATA__NAMESPACE}
 spec:
   gateways:
-    - ${ISTIO__NAMESPACE}/runway-gateway
+    - ${ISTIO__NAMESPACE}/ai-platform-gateway
   hosts:
     - openmetadata.${DOMAIN_HOST}
   http:

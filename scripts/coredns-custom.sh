@@ -28,21 +28,21 @@ else
     kubectl create configmap coredns-custom -n kube-system --dry-run=client -o yaml | kubectl apply -f -
 fi
 
-# Create runway-platform.server configuration with actual values
+# Create ai-platform.server configuration with actual values
 # Escape dots in domain for regex
 DOMAIN_HOST_ESCAPED=$(echo "$DOMAIN_HOST" | sed 's/\./\\./g')
 
 export DOMAIN_HOST
 export DOMAIN_HOST_ESCAPED
 export GATEWAY_IP
-envsubst < scripts/runway-platform.server > /tmp/runway-platform.server
+envsubst < scripts/ai-platform.server > /tmp/ai-platform.server
 
-cat /tmp/runway-platform.server
+cat /tmp/ai-platform.server
 
-# Merge runway-platform.server key into coredns-custom configmap
-kubectl create configmap coredns-custom --from-file=runway-platform.server=/tmp/runway-platform.server -n kube-system --dry-run=client -o yaml | kubectl patch configmap coredns-custom -n kube-system --patch-file=/dev/stdin
+# Merge ai-platform.server key into coredns-custom configmap
+kubectl create configmap coredns-custom --from-file=ai-platform.server=/tmp/ai-platform.server -n kube-system --dry-run=client -o yaml | kubectl patch configmap coredns-custom -n kube-system --patch-file=/dev/stdin
 
 # Clean up
-rm -f /tmp/runway-platform.server
+rm -f /tmp/ai-platform.server
 
 echo "✅ CoreDNS custom configuration applied successfully!"

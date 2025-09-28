@@ -5,7 +5,7 @@
 replicaCount: 1
 
 image:
-  repository: cr.makina.rocks/inho.kim/auth-test
+  repository: auth-test
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: "0.1.0"
@@ -45,7 +45,7 @@ service:
 
 virtualService:
   enabled: true
-  domain: runway.ai
+  domain: platform.ai
   subdomains:
     - auth
     - auth-test

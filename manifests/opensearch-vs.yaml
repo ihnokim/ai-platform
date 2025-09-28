@@ -5,7 +5,7 @@ metadata:
   namespace: ${OPENSEARCH__NAMESPACE}
 spec:
   gateways:
-    - ${ISTIO__NAMESPACE}/runway-gateway
+    - ${ISTIO__NAMESPACE}/ai-platform-gateway
   hosts:
     - opensearch.${DOMAIN_HOST}
   http:

@@ -18,7 +18,7 @@ root-ca: ## Create root CA
 	@mkdir -p ./certs
 	@openssl genrsa -out ./certs/root-ca.key 4096;
 	@openssl req -x509 -new -key ./certs/root-ca.key -sha256 -days 3650 -out ./certs/root-ca.pem \
-		-subj "/CN=Runway Root CA/O=Runway Platform/L=Gangnam/ST=Seoul/C=KR" \
+		-subj "/CN=AI Platform Root CA/O=AI Platform/L=Gangnam/ST=Seoul/C=KR" \
 		-addext "basicConstraints=critical,CA:TRUE" \
 		-addext "keyUsage=critical,keyCertSign,cRLSign";
 
@@ -26,7 +26,7 @@ csr: ## Create CSR for *.${DOMAIN_HOST}
 	@echo "📄 Creating CSR for *.${DOMAIN_HOST}..."
 	@openssl genrsa -out ./certs/${CLUSTER_NAME}-key.pem 4096;
 	@openssl req -new -key ./certs/${CLUSTER_NAME}-key.pem -out ./certs/${CLUSTER_NAME}.csr \
-		-subj "/CN=*.${DOMAIN_HOST}/OU=Platform Infrastructure/O=Runway Platform/L=Gangnam/ST=Seoul/C=KR" \
+		-subj "/CN=*.${DOMAIN_HOST}/OU=Platform Infrastructure/O=AI Platform/L=Gangnam/ST=Seoul/C=KR" \
 		-addext "subjectAltName=DNS:*.${DOMAIN_HOST},DNS:${DOMAIN_HOST},DNS:*.serving.${DOMAIN_HOST}"
 
 sign-cert: ## Sign leaf certificate with Root CA
@@ -46,7 +46,7 @@ deprecated-issue-cert: ## Issue certificate
 	@mkdir -p ./certs
 	@openssl req -x509 -newkey rsa:4096 -keyout ./certs/${CLUSTER_NAME}-key.pem -out ./certs/${CLUSTER_NAME}-cert.pem \
 		-days 365 -nodes \
-		-subj "/CN=*.${DOMAIN_HOST}/OU=Platform Infrastructure/O=Runway Platform/L=Gangnam/ST=Seoul/C=KR" \
+		-subj "/CN=*.${DOMAIN_HOST}/OU=Platform Infrastructure/O=AI Platform/L=Gangnam/ST=Seoul/C=KR" \
 		-addext "subjectAltName=DNS:*.${DOMAIN_HOST},DNS:${DOMAIN_HOST}";
 
 deprecated-apply-cert: ## Apply certificate
@@ -77,7 +77,7 @@ deprecated-find-cert:
 	@security find-certificate -c "${DOMAIN_HOST}" /Library/Keychains/System.keychain
 
 find-cert:
-	@security find-certificate -c "Runway" /Library/Keychains/System.keychain
+	@security find-certificate -c "AI Platform" /Library/Keychains/System.keychain
 
 destroy-cert: ## Open Keychain Access for manual certificate deletion
 	@if [ "$$(uname)" = "Darwin" ]; then \
@@ -251,8 +251,8 @@ dns: ## Setup dnsmasq for local development
 	echo "" >> "$$PROJECT_CONF"; \
 	echo "# Domain configuration (generated from DOMAIN_HOST)" >> "$$PROJECT_CONF"; \
 	echo "address=/${DOMAIN_HOST}/127.0.0.1" >> "$$PROJECT_CONF"; \
-	echo "🧹 Removing existing runway-platform entries..."; \
-	sudo sed -i '' '/runway-platform\/dnsmasq.*\.conf/d' "$$MAIN_CONF" 2>/dev/null || true; \
+	echo "🧹 Removing existing ai-platform entries..."; \
+	sudo sed -i '' '/ai-platform\/dnsmasq.*\.conf/d' "$$MAIN_CONF" 2>/dev/null || true; \
 	echo "➕ Adding generated config to main dnsmasq.conf..."; \
 	echo "conf-file=$$PROJECT_CONF" | sudo tee -a "$$MAIN_CONF" >/dev/null; \
 	echo "🧪 Testing configuration..."; \
@@ -287,8 +287,8 @@ destroy-dns: ## Cleanup dnsmasq configuration
 	@echo "🧹 Cleaning up dnsmasq configuration..."
 	@PROJECT_CONF="$(shell pwd)/dnsmasq.conf"; \
 	MAIN_CONF="$$(brew --prefix)/etc/dnsmasq.conf"; \
-	echo "🗑️  Removing runway-platform entries from $$MAIN_CONF..."; \
-	sudo sed -i '' '/runway-platform\/dnsmasq.*\.conf/d' "$$MAIN_CONF" 2>/dev/null || true; \
+	echo "🗑️  Removing ai-platform entries from $$MAIN_CONF..."; \
+	sudo sed -i '' '/ai-platform\/dnsmasq.*\.conf/d' "$$MAIN_CONF" 2>/dev/null || true; \
 	echo "🗑️  Removing generated config file..."; \
 	rm -f "$$PROJECT_CONF"; \
 	echo "🔄 Restarting dnsmasq..."; \
@@ -316,7 +316,7 @@ destroy-internal-dns: ## Destroy internal DNS for local development
 
 test-internal-dns:
 	@GITEA_POD_NAME=$$(kubectl get pods -n gitea -o jsonpath='{.items[0].metadata.name}'); \
-	kubectl exec -n gitea $$GITEA_POD_NAME -- nslookup keycloak.runway.ai
+	kubectl exec -n gitea $$GITEA_POD_NAME -- nslookup keycloak.${DOMAIN_HOST}
 
 current-internal-dns:
 	@kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}'
@@ -360,8 +360,8 @@ install-istio-gateway: ## Install istio/gateway chart
 
 install-istio: install-istio-base install-istio-istiod install-istio-gateway ## Install istio charts
 
-runway-gateway: deprecated-tls ## Deploy runway gateway chart
-	@helm upgrade --install runway-gateway helm/istio/runway-gateway \
+platform-gateway: deprecated-tls ## Deploy platform gateway chart
+	@helm upgrade --install platform-gateway helm/istio/platform-gateway \
 		--namespace ${ISTIO__NAMESPACE} --create-namespace \
 		--set host=${DOMAIN_HOST} \
 		--set tls.enabled=true \
@@ -371,7 +371,7 @@ istio: install-istio ## Deploy istio base and istiod charts
 	@helm upgrade --install istio-base helm/istio/base -n ${ISTIO__NAMESPACE} --create-namespace
 	@helm upgrade --install istio-istiod helm/istio/istiod -n ${ISTIO__NAMESPACE} --create-namespace
 	@helm upgrade --install istio-gateway helm/istio/gateway -n ${ISTIO__NAMESPACE} --create-namespace
-	@$(MAKE) runway-gateway
+	@$(MAKE) platform-gateway
 	@$(MAKE) internal-dns
 
 add-cnpg-repo: ## Add cnpg repo
@@ -456,7 +456,7 @@ destroy-cnpg: ## Destroy cnpg cluster and operator
 	@echo "🗑️  Removing CNPG cluster..."
 	@helm uninstall cnpg-cluster -n ${CNPG__DATABASE_NAMESPACE} 2>/dev/null || echo "cnpg-cluster not found"
 	@echo "🗑️  Removing admin secret..."
-	@kubectl delete secret ${CNPG__ADMIN_SECRET} -n ${CNPG__DATABASE_NAMESPACE} 2>/dev/null || echo "runway-admin-secret not found"
+	@kubectl delete secret ${CNPG__ADMIN_SECRET} -n ${CNPG__DATABASE_NAMESPACE} 2>/dev/null || echo "platform-admin-secret not found"
 	@echo "🗑️  Removing CNPG operator..."
 	@helm uninstall cnpg-cloudnative-pg -n ${CNPG__OPERATOR_NAMESPACE} 2>/dev/null || echo "cnpg-cloudnative-pg not found"
 	@echo "✅ CNPG cleanup complete!"

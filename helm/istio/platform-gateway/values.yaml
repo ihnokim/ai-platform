@@ -1,4 +1,4 @@
-host: runway.ai
+host: platform.ai
 tls:
   enabled: false
   credentialName: ~

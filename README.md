@@ -1,4 +1,4 @@
-# Runway Platform
+# AI Platform
 
 A comprehensive Kubernetes platform with integrated authentication, Git hosting, and workflow management.
 
@@ -26,16 +26,10 @@ A comprehensive Kubernetes platform with integrated authentication, Git hosting,
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd runway-platform
+   cd ai-platform
    ```
 
-2. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-3. **Start the platform**
+2. **Start the platform**
    ```bash
    make test-cluster    # Create local Kubernetes cluster
    make istio          # Install Istio service mesh
@@ -45,7 +39,7 @@ A comprehensive Kubernetes platform with integrated authentication, Git hosting,
    make k8s-oidc       # Setup Kubernetes OIDC authentication
    ```
 
-4. **Authenticate with kubectl**
+3. **Authenticate with kubectl**
    ```bash
    make k8s-oidc-auth
    # Follow the prompts to authenticate
@@ -65,30 +59,30 @@ The platform uses Keycloak as the central identity provider with OIDC integratio
 
 | Group | Permissions | Description |
 |-------|-------------|-------------|
-| `runway-developers` | Read-only | View resources, logs, and status |
-| `runway-operators` | Limited write | Deploy and manage applications |
-| `runway-admins` | Full access | Complete cluster administration |
+| `ai-developers` | Read-only | View resources, logs, and status |
+| `ai-operators` | Limited write | Deploy and manage applications |
+| `ai-admins` | Full access | Complete cluster administration |
 
 ### Sample Users
 
 | Username | Password | Group | Access |
 |----------|----------|-------|--------|
-| `developer` | `developer123` | `runway-developers` | Read-only |
-| `k8s-admin` | `admin123` | `runway-admins` | Full access |
+| `developer` | `developer123` | `ai-developers` | Read-only |
+| `k8s-admin` | `admin123` | `ai-admins` | Full access |
 
 ## Services
 
 ### Keycloak
-- **URL**: https://keycloak.runway.local
-- **Admin Console**: https://keycloak.runway.local/auth/admin
-- **Realm**: `runway`
+- **URL**: https://keycloak.platform.ai
+- **Admin Console**: https://keycloak.platform.ai/auth/admin
+- **Realm**: `platform`
 
 ### Gitea
-- **URL**: https://gitea.runway.local
+- **URL**: https://gitea.platform.ai
 - **Admin**: `gitea_admin` / `r8sA8CPHD9!bt6d`
 
 ### Airflow
-- **URL**: https://airflow.runway.local
+- **URL**: https://airflow.platform.ai
 - **Admin**: Configured via environment variables
 
 ## Development
@@ -101,7 +95,7 @@ The platform uses Keycloak as the central identity provider with OIDC integratio
    ```
 
 2. **Access services**
-   - All services are accessible via `*.runway.local` domains
+   - All services are accessible via `*.platform.ai` domains
    - DNS automatically resolves to local cluster
 
 3. **Stop services**
@@ -156,11 +150,11 @@ Key configuration variables in `.env`:
 
 ```bash
 # Domain configuration
-DOMAIN_HOST=runway.local
+DOMAIN_HOST=platform.ai
 
 # Keycloak
 KEYCLOAK__NAMESPACE=keycloak
-KEYCLOAK__REALM_NAME=runway
+KEYCLOAK__REALM_NAME=platform
 KEYCLOAK__ADMIN_USERNAME=admin
 KEYCLOAK__ADMIN_PASSWORD=admin123
 
@@ -188,7 +182,7 @@ CNPG__ADMIN_PASSWORD=postgres123
 1. **DNS Resolution**
    ```bash
    # Check DNS configuration
-   nslookup keycloak.runway.local
+   nslookup keycloak.platform.ai
    
    # Restart DNS
    make destroy-dns && make dns
@@ -200,7 +194,7 @@ CNPG__ADMIN_PASSWORD=postgres123
    kubectl get pods -n keycloak
    
    # Verify OIDC configuration
-   curl https://keycloak.runway.local/auth/realms/runway/.well-known/openid-configuration
+   curl https://keycloak.platform.ai/auth/realms/platform/.well-known/openid-configuration
    ```
 
 3. **Kubernetes Access**

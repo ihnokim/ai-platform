@@ -464,19 +464,24 @@ destroy-cnpg: ## Destroy cnpg cluster and operator
 database: ## Create database
 	@if [ -z "${name}" ]; then \
 		echo "❌ Error: name is not set or empty"; \
-		echo "💡 Usage: make database name=your_database_name"; \
+		echo "💡 Usage: make database-create name=your_database_name [owner=owner_name]"; \
 		exit 1; \
 	fi
 	@echo "🔐 Creating database: ${name}..."
+	@if [ -n "${owner}" ]; then \
+		echo "👤 Database owner: ${owner}"; \
+	fi
 	@CNPG_POD_NAME=$$(kubectl get endpoints ${CNPG__RW_SERVICE} -n ${CNPG__DATABASE_NAMESPACE} -o jsonpath='{.subsets[0].addresses[0].targetRef.name}' 2>/dev/null); \
 	if [ -z "$$CNPG_POD_NAME" ]; then \
 		echo "❌ Error: No pod found for service ${CNPG__RW_SERVICE} in namespace ${CNPG__DATABASE_NAMESPACE}"; \
 		exit 1; \
 	fi; \
 	echo "🔍 Using pod: $$CNPG_POD_NAME (from service ${CNPG__RW_SERVICE})"; \
-	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"CREATE DATABASE ${name};\"" 2>/dev/null && echo "✅ Database ${name} created" || echo "⚠️  Database ${name} already exists"
-#	@echo "🔐 Granting privileges to ${name}..."
-#	@kubectl exec -n ${CNPG__DATABASE_NAMESPACE} cnpg-cluster-1 -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"GRANT ALL PRIVILEGES ON DATABASE ${name} TO ${CNPG__ADMIN_USERNAME};\""
+	if [ -n "${owner}" ]; then \
+		kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- psql -c "CREATE DATABASE ${name} OWNER ${owner};" 2>/dev/null && echo "✅ Database ${name} created with owner ${owner}" || echo "⚠️  Database ${name} already exists or owner ${owner} not found"; \
+	else \
+		kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- psql -c "CREATE DATABASE ${name};" 2>/dev/null && echo "✅ Database ${name} created" || echo "⚠️  Database ${name} already exists"; \
+	fi
 
 destroy-database: ## Destroy database
 	@if [ -z "${name}" ]; then \
@@ -491,8 +496,8 @@ destroy-database: ## Destroy database
 		exit 1; \
 	fi; \
 	echo "🔍 Using pod: $$CNPG_POD_NAME (from service ${CNPG__RW_SERVICE})"; \
-	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${name}' AND pid<>pg_backend_pid();\"" 2>/dev/null && echo "✅ Closed connections to ${name}" || echo "⚠️  No connections to ${name} found"; \
-	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- bash -c "export PGPASSWORD='${CNPG__ADMIN_PASSWORD}' && psql -h localhost -U ${CNPG__ADMIN_USERNAME} -d ${CNPG__DATABASE_NAME} -c \"DROP DATABASE IF EXISTS ${name};\"" 2>/dev/null && echo "✅ Database ${name} destroyed" || echo "⚠️  Database ${name} not found";
+	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${name}' AND pid<>pg_backend_pid();" 2>/dev/null && echo "✅ Closed connections to ${name}" || echo "⚠️  No connections to ${name} found"; \
+	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- psql -c "DROP DATABASE IF EXISTS ${name};" 2>/dev/null && echo "✅ Database ${name} destroyed" || echo "⚠️  Database ${name} not found";
 
 add-keycloak-repo: ## Add keycloak repo
 	@helm repo add bitnami https://charts.bitnami.com/bitnami

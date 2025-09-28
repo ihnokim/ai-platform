@@ -1,11 +1,11 @@
 include .env
 
-.PHONY: help root-ca csr cert ca tls test-cluster destroy-test-cluster auth-test dns destroy-dns cnpg destroy-cnpg database
-
+.PHONY: help
 help: ## Show available commands
 	@echo "Commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
+.PHONY: dependency
 dependency:
 	@if kubectl oidc-login --version >/dev/null 2>&1; then \
 		echo "✅ Kubectl oidc-login is installed"; \
@@ -14,6 +14,7 @@ dependency:
 		exit 1; \
 	fi
 
+.PHONY: root-ca
 root-ca: ## Create root CA
 	@mkdir -p ./certs
 	@openssl genrsa -out ./certs/root-ca.key 4096;
@@ -22,6 +23,7 @@ root-ca: ## Create root CA
 		-addext "basicConstraints=critical,CA:TRUE" \
 		-addext "keyUsage=critical,keyCertSign,cRLSign";
 
+.PHONY: csr
 csr: ## Create CSR for *.${DOMAIN_HOST}
 	@echo "📄 Creating CSR for *.${DOMAIN_HOST}..."
 	@openssl genrsa -out ./certs/${CLUSTER_NAME}-key.pem 4096;
@@ -29,6 +31,7 @@ csr: ## Create CSR for *.${DOMAIN_HOST}
 		-subj "/CN=*.${DOMAIN_HOST}/OU=Platform Infrastructure/O=AI Platform/L=Gangnam/ST=Seoul/C=KR" \
 		-addext "subjectAltName=DNS:*.${DOMAIN_HOST},DNS:${DOMAIN_HOST},DNS:*.serving.${DOMAIN_HOST}"
 
+.PHONY: sign-cert
 sign-cert: ## Sign leaf certificate with Root CA
 	@echo "✍️ Signing leaf certificate with Root CA..."
 	@printf '%s\n' \
@@ -42,6 +45,7 @@ sign-cert: ## Sign leaf certificate with Root CA
 		-out ./certs/${CLUSTER_NAME}-cert.pem -days 825 -sha256 -extfile ./certs/${CLUSTER_NAME}-leaf.ext -extensions ext
 	@cat ./certs/${CLUSTER_NAME}-cert.pem ./certs/root-ca.pem > ./certs/${CLUSTER_NAME}-chain.pem
 
+.PHONY: deprecated-issue-cert
 deprecated-issue-cert: ## Issue certificate
 	@mkdir -p ./certs
 	@openssl req -x509 -newkey rsa:4096 -keyout ./certs/${CLUSTER_NAME}-key.pem -out ./certs/${CLUSTER_NAME}-cert.pem \
@@ -49,6 +53,7 @@ deprecated-issue-cert: ## Issue certificate
 		-subj "/CN=*.${DOMAIN_HOST}/OU=Platform Infrastructure/O=AI Platform/L=Gangnam/ST=Seoul/C=KR" \
 		-addext "subjectAltName=DNS:*.${DOMAIN_HOST},DNS:${DOMAIN_HOST}";
 
+.PHONY: deprecated-apply-cert
 deprecated-apply-cert: ## Apply certificate
 	@if [ "$$(uname)" = "Darwin" ] && [ -f ./certs/${CLUSTER_NAME}-cert.pem ]; then \
 		echo "🍎 Updating certificate in macOS Keychain..."; \
@@ -59,6 +64,7 @@ deprecated-apply-cert: ## Apply certificate
 		echo "ℹ️  macOS certificate installation skipped (not macOS)"; \
 	fi
 
+.PHONY: apply-cert
 apply-cert:
 	@if [ "$$(uname)" = "Darwin" ] && [ -f ./certs/root-ca.pem ]; then \
 		echo "🍎 Updating Root CA certificate in macOS Keychain..."; \
@@ -69,16 +75,21 @@ apply-cert:
 		echo "ℹ️  macOS certificate installation skipped (not macOS)"; \
 	fi
 
+.PHONY: deprecated-cert
 deprecated-cert: deprecated-issue-cert deprecated-apply-cert
 
+.PHONY: cert
 cert: root-ca csr sign-cert apply-cert ## Issue and apply certificate
 
+.PHONY: deprecated-find-cert
 deprecated-find-cert:
 	@security find-certificate -c "${DOMAIN_HOST}" /Library/Keychains/System.keychain
 
+.PHONY: find-cert
 find-cert:
 	@security find-certificate -c "AI Platform" /Library/Keychains/System.keychain
 
+.PHONY: destroy-cert
 destroy-cert: ## Open Keychain Access for manual certificate deletion
 	@if [ "$$(uname)" = "Darwin" ]; then \
 		echo "🗑️ Opening Keychain Access for manual deletion..."; \
@@ -93,6 +104,7 @@ destroy-cert: ## Open Keychain Access for manual certificate deletion
 		echo "ℹ️ macOS certificate deletion skipped (not macOS)"; \
 	fi
 
+.PHONY: test-cluster
 test-cluster: ## Install test cluster
 	@if ! k3d cluster list ${CLUSTER_NAME}; then \
 	  k3d cluster create ${CLUSTER_NAME} \
@@ -113,6 +125,7 @@ test-cluster: ## Install test cluster
 		--k3s-arg '--kube-apiserver-arg=authorization-mode=Node,RBAC@server:*'; \
 	fi
 
+.PHONY: deprecated-tls
 deprecated-tls:
 	@if [ ! -f "./certs/${CLUSTER_NAME}-cert.pem" ]; then \
 		echo "❌ Certificate ${CLUSTER_NAME}-cert.pem does not exist"; \
@@ -128,6 +141,7 @@ deprecated-tls:
 		--key=./certs/${CLUSTER_NAME}-key.pem \
 		-n ${ISTIO__NAMESPACE}
 
+.PHONY: tls
 tls:
 	@if [ ! -f "./certs/${CLUSTER_NAME}-chain.pem" ]; then \
 		echo "❌ Certificate chain ${CLUSTER_NAME}-chain.pem does not exist"; \
@@ -143,6 +157,7 @@ tls:
 		--key=./certs/${CLUSTER_NAME}-key.pem \
 		-n ${ISTIO__NAMESPACE}
 
+.PHONY: copy-tls
 copy-tls: ## Copy TLS secret from istio-system to gitea namespace
 	@echo "📋 Copying TLS secret from istio-system to ${namespace} namespace..."
 	@kubectl get secret ${CLUSTER_NAME}-tls -n ${ISTIO__NAMESPACE} -o yaml | \
@@ -150,6 +165,7 @@ copy-tls: ## Copy TLS secret from istio-system to gitea namespace
 		kubectl apply -f -
 	@echo "✅ TLS secret copied to ${namespace} namespace"
 
+.PHONY: ca
 ca: ## Create CA secret
 	-@kubectl create namespace ${namespace}
 	@kubectl create secret generic ${CLUSTER_NAME}-ca \
@@ -158,6 +174,7 @@ ca: ## Create CA secret
 
 # --k3s-arg '--kube-apiserver-arg=oidc-ca-file=/tmp/${CLUSTER_NAME}-certs/${CLUSTER_NAME}-cert.pem@server:*'
 
+.PHONY: destroy-test-cluster
 destroy-test-cluster: ## Destroy test cluster
 	@if k3d cluster list ${CLUSTER_NAME} >/dev/null 2>&1; then \
 		if kubectl config current-context | grep '^k3d'; then \
@@ -176,9 +193,11 @@ destroy-test-cluster: ## Destroy test cluster
 		fi \
 	fi
 
+.PHONY: kubeconfig-admin
 kubeconfig-admin:
 	@k3d kubeconfig get ${CLUSTER_NAME}
 
+.PHONY: kubeconfig-oidc
 kubeconfig-oidc: ## Generate kubeconfig with OIDC authentication
 	@if ! [ -n "$${namespace}" ]; then \
 		echo "❌ namespace is not set"; \
@@ -186,6 +205,7 @@ kubeconfig-oidc: ## Generate kubeconfig with OIDC authentication
 	fi
 	@TARGET_NAMESPACE=${namespace} set -a && source .env && set +a && envsubst < manifests/kubeconfig.yaml
 
+.PHONY: kubelogin-decoded-token
 kubelogin-decoded-token:
 	@kubectl oidc-login get-token \
 		--oidc-issuer-url=https://keycloak.${DOMAIN_HOST}/realms/${KEYCLOAK__REALM_NAME} \
@@ -193,9 +213,11 @@ kubelogin-decoded-token:
 		--insecure-skip-tls-verify -v=0 \
 		| jq -r '.status.token | split(".")[1] | @base64d | fromjson'
 
+.PHONY: kubelogout
 kubelogout:
 	@rm -rf ~/.kube/cache/oidc-login/*
 
+.PHONY: kubernetes-oidc-project-roles
 kubernetes-oidc-project-roles: ## Create Kubernetes OIDC project roles
 	@if ! [ -n "$${namespace}" ]; then \
 		echo "❌ namespace is not set"; \
@@ -203,6 +225,7 @@ kubernetes-oidc-project-roles: ## Create Kubernetes OIDC project roles
 	fi
 	@TARGET_NAMESPACE=${namespace} set -a && source .env && set +a && envsubst < manifests/kubernetes-oidc-project-roles.yaml
 
+.PHONY: kubernetes-oidc-project-rolebinding
 kubernetes-oidc-project-rolebinding: ## Create Kubernetes OIDC project rolebinding
 	@if ! [ -n "$${namespace}" ]; then \
 		echo "❌ namespace is not set"; \
@@ -218,6 +241,7 @@ kubernetes-oidc-project-rolebinding: ## Create Kubernetes OIDC project rolebindi
 	fi
 	@TARGET_NAMESPACE=${namespace} GROUP=${group} ROLE=${role} set -a && source .env && set +a && envsubst < manifests/kubernetes-oidc-project-rolebinding.yaml
 
+.PHONY: auth-test
 auth-test: ## Deploy auth-test app
 	@helm upgrade --install auth-test helm/auth-test \
 		--namespace auth \
@@ -225,10 +249,12 @@ auth-test: ## Deploy auth-test app
 		--set virtualService.domain=${DOMAIN_HOST}
 	@echo "✅ Auth test app installed!"
 
+.PHONY: destroy-auth-test
 destroy-auth-test: ## Destroy auth-test app
 	@helm uninstall auth-test --namespace auth
 	@echo "✅ Auth test app uninstalled!"
 
+.PHONY: dns
 dns: ## Setup dnsmasq for local development
 	@echo "🚀 Setting up dnsmasq for local development..."
 	@echo "🌐 Using domain: ${DOMAIN_HOST}"
@@ -283,6 +309,7 @@ dns: ## Setup dnsmasq for local development
 		exit 1; \
 	fi;
 
+.PHONY: destroy-dns
 destroy-dns: ## Cleanup dnsmasq configuration
 	@echo "🧹 Cleaning up dnsmasq configuration..."
 	@PROJECT_CONF="$(shell pwd)/dnsmasq.conf"; \
@@ -300,6 +327,7 @@ destroy-dns: ## Cleanup dnsmasq configuration
 	sudo killall -HUP mDNSResponder; \
 	echo "✅ DNS cleanup complete!"
 
+.PHONY: internal-dns
 internal-dns: ## Setup internal DNS for local development
 	@echo "🚀 Setting up internal DNS for local development..."
 	@echo "🌐 Using domain: ${DOMAIN_HOST}"
@@ -309,22 +337,27 @@ internal-dns: ## Setup internal DNS for local development
 	@echo "✅ Internal DNS setup complete!"
 # NOTE: kubectl rollout restart deployment coredns -n kube-system
 
+.PHONY: destroy-internal-dns
 destroy-internal-dns: ## Destroy internal DNS for local development
 	@echo "🧹 Cleaning up internal DNS configuration..."
 	@kubectl delete configmap coredns-custom -n kube-system
 	@echo "✅ Internal DNS cleanup complete!"
 
+.PHONY: test-internal-dns
 test-internal-dns:
 	@GITEA_POD_NAME=$$(kubectl get pods -n gitea -o jsonpath='{.items[0].metadata.name}'); \
 	kubectl exec -n gitea $$GITEA_POD_NAME -- nslookup keycloak.${DOMAIN_HOST}
 
+.PHONY: current-internal-dns
 current-internal-dns:
 	@kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}'
 
+.PHONY: add-istio-repo
 add-istio-repo: ## Add istio repo
 	@helm repo add istio https://istio-release.storage.googleapis.com/charts
 	@helm repo update
 
+.PHONY: install-istio-base
 install-istio-base: ## Install istio/base chart
 	@if [ ! -f "helm/istio/base/Chart.yaml" ]; then \
 		echo "📦 Downloading Istio base chart..."; \
@@ -336,6 +369,7 @@ install-istio-base: ## Install istio/base chart
 		echo "✅ Istio base chart already exists (helm/istio/base/Chart.yaml found)"; \
 	fi
 
+.PHONY: install-istio-istiod
 install-istio-istiod: ## Install istio/istiod chart
 	@if [ ! -f "helm/istio/istiod/Chart.yaml" ]; then \
 		echo "📦 Downloading Istio istiod chart..."; \
@@ -347,6 +381,7 @@ install-istio-istiod: ## Install istio/istiod chart
 		echo "✅ Istio istiod chart already exists (helm/istio/istiod/Chart.yaml found)"; \
 	fi
 
+.PHONY: install-istio-gateway
 install-istio-gateway: ## Install istio/gateway chart
 	@if [ ! -f "helm/istio/gateway/Chart.yaml" ]; then \
 		echo "📦 Downloading Istio gateway chart..."; \
@@ -358,8 +393,10 @@ install-istio-gateway: ## Install istio/gateway chart
 		echo "✅ Istio gateway chart already exists (helm/istio/gateway/Chart.yaml found)"; \
 	fi
 
+.PHONY: install-istio
 install-istio: install-istio-base install-istio-istiod install-istio-gateway ## Install istio charts
 
+.PHONY: ai-platform-gateway
 ai-platform-gateway: deprecated-tls ## Deploy AI platform gateway chart
 	@helm upgrade --install ai-platform-gateway helm/istio/ai-platform-gateway \
 		--namespace ${ISTIO__NAMESPACE} --create-namespace \
@@ -367,6 +404,7 @@ ai-platform-gateway: deprecated-tls ## Deploy AI platform gateway chart
 		--set tls.enabled=true \
 		--set tls.credentialName=${CLUSTER_NAME}-tls
 
+.PHONY: istio
 istio: install-istio ## Deploy istio base and istiod charts
 	@helm upgrade --install istio-base helm/istio/base -n ${ISTIO__NAMESPACE} --create-namespace
 	@helm upgrade --install istio-istiod helm/istio/istiod -n ${ISTIO__NAMESPACE} --create-namespace
@@ -374,6 +412,7 @@ istio: install-istio ## Deploy istio base and istiod charts
 	@$(MAKE) ai-platform-gateway
 	@$(MAKE) internal-dns
 
+.PHONY: virtualservice
 virtualservice: ## Deploy virtual service
 	@if [ -z "${name}" ]; then \
 		echo "❌ Error: name is not set"; \
@@ -403,14 +442,17 @@ virtualservice: ## Deploy virtual service
 	@NAME=${name} PORT=${port} NAMESPACE=${namespace} SERVICE_NAME=${service_name} SUBDOMAIN=${subdomain} set -a && source .env && set +a && envsubst < manifests/virtualservice.yaml | kubectl apply -f -
 	@echo "✅ Virtual service deployed!"
 
+.PHONY: destroy-virtualservice
 destroy-virtualservice: ## Destroy virtual service
 	@kubectl delete virtualservice ${name} -n ${namespace}
 	@echo "✅ Virtual service destroyed!"
 
+.PHONY: add-cnpg-repo
 add-cnpg-repo: ## Add cnpg repo
 	@helm repo add cnpg https://cloudnative-pg.github.io/charts
 	@helm repo update
 
+.PHONY: install-cnpg-cloudnative-pg
 install-cnpg-cloudnative-pg: ## Install cnpg/cloudnative-pg chart
 	@if [ ! -f "helm/cnpg/cloudnative-pg/Chart.yaml" ]; then \
 		echo "📦 Downloading cnpg chart..."; \
@@ -422,6 +464,7 @@ install-cnpg-cloudnative-pg: ## Install cnpg/cloudnative-pg chart
 		echo "✅ cnpg/cloudnative-pg chart already exists (helm/cnpg/cloudnative-pg/Chart.yaml found)"; \
 	fi
 
+.PHONY: install-cnpg-cluster
 install-cnpg-cluster: ## Install cnpg/cluster chart
 	@if [ ! -f "helm/cnpg/cluster/Chart.yaml" ]; then \
 		echo "📦 Downloading cnpg/cluster chart..."; \
@@ -433,6 +476,7 @@ install-cnpg-cluster: ## Install cnpg/cluster chart
 		echo "✅ cnpg/cluster chart already exists (helm/cnpg/cluster/Chart.yaml found)"; \
 	fi
 
+.PHONY: install-cnpg
 install-cnpg: install-cnpg-cloudnative-pg install-cnpg-cluster ## Install cnpg charts
 
 #		--set cluster.initdb.postInitSQL[0]="CREATE DATABASE ${KEYCLOAK__DATABASE_NAME};" \
@@ -441,6 +485,7 @@ install-cnpg: install-cnpg-cloudnative-pg install-cnpg-cluster ## Install cnpg c
 #		--set cluster.initdb.postInitSQL[3]="GRANT ALL PRIVILEGES ON DATABASE ${KEYCLOAK__DATABASE_NAME} TO ${CNPG__ADMIN_USERNAME};" \
 #		--set cluster.initdb.postInitSQL[4]="GRANT ALL PRIVILEGES ON DATABASE ${GITEA__DATABASE_NAME} TO ${CNPG__ADMIN_USERNAME};" \
 
+.PHONY: cnpg
 cnpg: install-cnpg ## Install cnpg charts
 	@helm upgrade --install cnpg-cloudnative-pg helm/cnpg/cloudnative-pg -n ${CNPG__OPERATOR_NAMESPACE} --create-namespace --wait
 #	--set config.clusterWide=false \
@@ -485,6 +530,7 @@ cnpg: install-cnpg ## Install cnpg charts
 # TODO: enable monitoring
 # TODO: enable logging
 
+.PHONY: destroy-cnpg
 destroy-cnpg: ## Destroy cnpg cluster and operator
 	@echo "🗑️  Removing CNPG cluster..."
 	@helm uninstall cnpg-cluster -n ${CNPG__DATABASE_NAMESPACE} 2>/dev/null || echo "cnpg-cluster not found"
@@ -494,6 +540,7 @@ destroy-cnpg: ## Destroy cnpg cluster and operator
 	@helm uninstall cnpg-cloudnative-pg -n ${CNPG__OPERATOR_NAMESPACE} 2>/dev/null || echo "cnpg-cloudnative-pg not found"
 	@echo "✅ CNPG cleanup complete!"
 
+.PHONY: database
 database: ## Create database
 	@if [ -z "${name}" ]; then \
 		echo "❌ Error: name is not set or empty"; \
@@ -516,6 +563,7 @@ database: ## Create database
 		kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- psql -c "CREATE DATABASE ${name};" 2>/dev/null && echo "✅ Database ${name} created" || echo "⚠️  Database ${name} already exists"; \
 	fi
 
+.PHONY: destroy-database
 destroy-database: ## Destroy database
 	@if [ -z "${name}" ]; then \
 		echo "❌ Error: name is not set or empty"; \
@@ -532,11 +580,12 @@ destroy-database: ## Destroy database
 	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${name}' AND pid<>pg_backend_pid();" 2>/dev/null && echo "✅ Closed connections to ${name}" || echo "⚠️  No connections to ${name} found"; \
 	kubectl exec -n ${CNPG__DATABASE_NAMESPACE} $$CNPG_POD_NAME -c postgres -- psql -c "DROP DATABASE IF EXISTS ${name};" 2>/dev/null && echo "✅ Database ${name} destroyed" || echo "⚠️  Database ${name} not found";
 
+.PHONY: add-keycloak-repo
 add-keycloak-repo: ## Add keycloak repo
 	@helm repo add bitnami https://charts.bitnami.com/bitnami
 	@helm repo update
 
-# TODO: keycloak
+.PHONY: install-keycloak
 install-keycloak:
 	@if [ ! -f "helm/keycloak/Chart.yaml" ]; then \
 		echo "📦 Downloading bitnami/keycloak chart..."; \
@@ -548,7 +597,7 @@ install-keycloak:
 		echo "✅ bitnami/keycloak chart already exists (helm/keycloak/Chart.yaml found)"; \
 	fi
 
-# TODO: values set 값들 수정해야 함
+.PHONY: keycloak
 keycloak: install-keycloak ## Install keycloak chart
 	@$(MAKE) database name=${KEYCLOAK__DATABASE_NAME}
 	@helm upgrade --install keycloak helm/keycloak \
@@ -583,15 +632,18 @@ keycloak: install-keycloak ## Install keycloak chart
 #  - name: KC_HTTP_ENABLED
 #    value: "true"
 
+.PHONY: destroy-keycloak
 destroy-keycloak: ## Destroy keycloak
 	@helm uninstall keycloak -n ${KEYCLOAK__NAMESPACE}
 	@$(MAKE) destroy-virtualservice name=keycloak namespace=${KEYCLOAK__NAMESPACE}
 	@echo "✅ Keycloak uninstalled!"
 
+.PHONY: add-gitea-repo
 add-gitea-repo: ## Add gitea repo
 	@helm repo add gitea-charts https://dl.gitea.com/charts/
 	@helm repo update
 
+.PHONY: install-gitea
 install-gitea: ## Install gitea chart
 	@if [ ! -f "helm/gitea/Chart.yaml" ]; then \
 		echo "📦 Downloading gitea-charts/gitea chart..."; \
@@ -604,6 +656,7 @@ install-gitea: ## Install gitea chart
 	fi
 
 # NOTE: autoDiscoverUrl은 내부 클러스터 주소 사용해야 함
+.PHONY: gitea
 gitea: install-gitea ## Install gitea chart
 	-@$(MAKE) ca namespace=${GITEA__NAMESPACE}
 	@$(MAKE) database name=${GITEA__DATABASE_NAME}
@@ -661,15 +714,18 @@ gitea: install-gitea ## Install gitea chart
 	@$(MAKE) virtualservice name=gitea port=${GITEA__HTTP_PORT} namespace=${GITEA__NAMESPACE} service_name=${GITEA__SERVICE_NAME} subdomain=gitea
 	@echo "✅ Gitea installed!"
 
+.PHONY: destroy-gitea
 destroy-gitea: ## Destroy gitea chart
 	@helm uninstall gitea -n ${GITEA__NAMESPACE}
 	@$(MAKE) destroy-virtualservice name=gitea namespace=${GITEA__NAMESPACE}
 	@echo "✅ Gitea uninstalled!"
 
+.PHONY: add-airflow-repo
 add-airflow-repo: ## Add airflow repo
 	@helm repo add apache-airflow https://airflow.apache.org
 	@helm repo update
 
+.PHONY: install-airflow
 install-airflow: ## Install airflow chart
 	@if [ ! -f "helm/airflow/Chart.yaml" ]; then \
 		echo "📦 Downloading apache-airflow/airflow chart version ${AIRFLOW__CHART_VERSION}..."; \
@@ -679,6 +735,7 @@ install-airflow: ## Install airflow chart
 		echo "✅ apache-airflow/airflow chart version ${AIRFLOW__CHART_VERSION} downloaded to helm/airflow/"; \
 	fi
 
+.PHONY: airflow
 airflow: install-airflow ## Install airflow chart
 # --set brokerdata.brokerUrl=redis://redis-master:6379/0
 	@$(MAKE) database name=${AIRFLOW__DATABASE_NAME}
@@ -729,6 +786,7 @@ airflow: install-airflow ## Install airflow chart
 	@$(MAKE) virtualservice name=airflow port=${AIRFLOW__HTTP_PORT} namespace=${AIRFLOW__NAMESPACE} service_name=${AIRFLOW__SERVICE_NAME} subdomain=airflow
 	@echo "✅ Airflow installed!"
 
+.PHONY: destroy-airflow
 destroy-airflow: ## Destroy airflow chart
 	@helm uninstall airflow -n ${AIRFLOW__NAMESPACE} --wait
 	-@$(MAKE) destroy-virtualservice name=airflow namespace=${AIRFLOW__NAMESPACE}
@@ -737,10 +795,12 @@ destroy-airflow: ## Destroy airflow chart
 	-@$(MAKE) destroy-database name=${AIRFLOW__DATABASE_NAME}
 	@echo "✅ Airflow uninstalled!"
 
+.PHONY: add-openmetadata-repo
 add-openmetadata-repo: ## Add openmetadata repo
 	@helm repo add open-metadata https://helm.open-metadata.org/
 	@helm repo update
 
+.PHONY: install-openmetadata
 install-openmetadata: ## Install openmetadata chart
 	@if [ ! -f "helm/openmetadata/Chart.yaml" ]; then \
 		echo "📦 Downloading open-metadata/openmetadata chart..."; \
@@ -752,6 +812,7 @@ install-openmetadata: ## Install openmetadata chart
 		echo "✅ open-metadata/openmetadata chart already exists (helm/openmetadata/Chart.yaml found)"; \
 	fi
 
+.PHONY: openmetadata
 openmetadata: install-openmetadata ## Install openmetadata chart
 	-@kubectl create namespace ${OPENMETADATA__NAMESPACE} || true
 	@$(MAKE) database name=${OPENMETADATA__DATABASE_NAME}
@@ -809,6 +870,7 @@ openmetadata: install-openmetadata ## Install openmetadata chart
 	@$(MAKE) virtualservice name=openmetadata port=${OPENMETADATA__HTTP_PORT} namespace=${OPENMETADATA__NAMESPACE} service_name=${OPENMETADATA__SERVICE_NAME} subdomain=openmetadata
 	@echo "✅ Openmetadata installed!"
 
+.PHONY: destroy-openmetadata
 destroy-openmetadata: ## Destroy openmetadata chart
 	@helm uninstall openmetadata -n ${OPENMETADATA__NAMESPACE} --wait
 	-@$(MAKE) destroy-virtualservice name=openmetadata namespace=${OPENMETADATA__NAMESPACE}
@@ -816,10 +878,12 @@ destroy-openmetadata: ## Destroy openmetadata chart
 	@kubectl delete secret ${OPENMETADATA__ADMIN_SECRET} -n ${OPENMETADATA__NAMESPACE}
 	@echo "✅ Openmetadata uninstalled!"
 
+.PHONY: add-opensearch-repo
 add-opensearch-repo: ## Add opensearch repo
 	@helm repo add opensearch https://opensearch-project.github.io/helm-charts/
 	@helm repo update
 
+.PHONY: install-opensearch
 install-opensearch: ## Install opensearch chart
 	@if [ ! -f "helm/opensearch/Chart.yaml" ]; then \
 		echo "📦 Downloading opensearch/opensearch chart..."; \
@@ -831,6 +895,7 @@ install-opensearch: ## Install opensearch chart
 		echo "✅ opensearch/opensearch chart already exists (helm/opensearch/Chart.yaml found)"; \
 	fi
 
+.PHONY: opensearch
 opensearch: install-opensearch ## Install opensearch chart
 	-@kubectl create namespace ${OPENSEARCH__NAMESPACE} || true
 	-@kubectl create namespace ${OPENMETADATA__NAMESPACE} || true
@@ -852,6 +917,7 @@ opensearch: install-opensearch ## Install opensearch chart
 # Opensearch HTTP 연결 관련 issue 참고
 # https://github.com/opensearch-project/helm-charts/issues/610#issuecomment-2564864930
 
+.PHONY: destroy-opensearch
 destroy-opensearch: ## Destroy opensearch chart
 	-@kubectl delete secret ${OPENSEARCH__ADMIN_SECRET} -n ${OPENMETADATA__NAMESPACE}
 	-@helm uninstall opensearch -n ${OPENSEARCH__NAMESPACE}
@@ -868,10 +934,12 @@ destroy-opensearch: ## Destroy opensearch chart
 #		--set openmetadata.config.authentication.oidcConfiguration.callbackUrl=https://openmetadata.${DOMAIN_HOST}/callback
 #		--set openmetadata.config.authentication.oidcConfiguration.serverUrl=https://openmetadata.${DOMAIN_HOST}
 
+.PHONY: add-seaweedfs-repo
 add-seaweedfs-repo: ## Add seaweedfs repo
 	@helm repo add seaweedfs https://seaweedfs.github.io/seaweedfs/helm
 	@helm repo update
 
+.PHONY: install-seaweedfs
 install-seaweedfs:
 	@if [ ! -f "helm/seaweedfs/Chart.yaml" ]; then \
 		echo "📦 Downloading seaweedfs/seaweedfs chart..."; \
@@ -883,16 +951,19 @@ install-seaweedfs:
 		echo "✅ seaweedfs/seaweedfs chart already exists (helm/seaweedfs/Chart.yaml found)"; \
 	fi
 
+.PHONY: seaweedfs
 seaweedfs: install-seaweedfs
 	@echo "🗄️ Installing SeaweedFS for object storage..."
 	@set -a && source .env && set +a && envsubst < manifests/seaweedfs-config.yaml | helm upgrade --install seaweedfs seaweedfs/seaweedfs \
 		-n ${SEAWEEDFS__NAMESPACE} --create-namespace -f -
 	@echo "✅ SeaweedFS installation completed"
 
+.PHONY: add-seaweedfs-csi-driver-repo
 add-seaweedfs-csi-driver-repo: ## Add seaweedfs-csi-driver repo
 	@helm repo add seaweedfs-csi-driver https://seaweedfs.github.io/seaweedfs-csi-driver/helm
 	@helm repo update
 
+.PHONY: install-seaweedfs-csi-driver
 install-seaweedfs-csi-driver:
 	@if [ ! -f "helm/seaweedfs-csi-driver/Chart.yaml" ]; then \
 		echo "📦 Downloading seaweedfs-csi-driver/seaweedfs-csi-driver chart..."; \
@@ -904,6 +975,7 @@ install-seaweedfs-csi-driver:
 		echo "✅ seaweedfs-csi-driver/seaweedfs-csi-driver chart already exists (helm/seaweedfs-csi-driver/Chart.yaml found)"; \
 	fi
 
+.PHONY: seaweedfs-csi-driver
 seaweedfs-csi-driver: install-seaweedfs-csi-driver
 	@echo "💾 Installing SeaweedFS CSI Driver for RWX storage..."
 	@helm upgrade --install seaweedfs-csi-driver seaweedfs-csi-driver/seaweedfs-csi-driver --version 0.2.3 \
@@ -923,10 +995,34 @@ seaweedfs-csi-driver: install-seaweedfs-csi-driver
 	fi
 	@echo "✅ SeaweedFS CSI Driver installation completed"
 
+.PHONY: destroy-seaweedfs-csi-driver
 destroy-seaweedfs-csi-driver: ## Destroy seaweedfs-csi-driver
 	@helm uninstall seaweedfs-csi-driver -n ${SEAWEEDFS__NAMESPACE}
 	@echo "✅ SeaweedFS CSI Driver uninstalled!"
 
+.PHONY: destroy-seaweedfs
 destroy-seaweedfs: ## Destroy seaweedfs
 	@helm uninstall seaweedfs -n ${SEAWEEDFS__NAMESPACE}
 	@echo "✅ SeaweedFS uninstalled!"
+
+.PHONY: decode-token
+decode-token: ## Decode token
+	@if [ -z "${client-id}" ]; then \
+		echo "❌ client-id is not set"; \
+		exit 1; \
+	fi; \
+	if [ -z "${username}" ]; then \
+		echo "❌ username is not set"; \
+		exit 1; \
+	fi; \
+	if [ -z "${password}" ]; then \
+		echo "❌ password is not set"; \
+		exit 1; \
+	fi; \
+	echo "🔑 Decoding token for client: ${client-id}"
+	@CLIENT_SECRET=$$(bash scripts/keycloak.sh get-client-secret ${client-id}); \
+	if [ $$? -ne 0 ] || [ -z "$$CLIENT_SECRET" ]; then \
+		echo "❌ Failed to get client secret from Keycloak"; \
+		exit 1; \
+	fi; \
+	CLIENT_ID=${client-id} USERNAME=${username} PASSWORD=${password} DOMAIN_HOST=${DOMAIN_HOST} REALM_NAME=${KEYCLOAK__REALM_NAME} CLIENT_SECRET=$$CLIENT_SECRET set -a && source .env && set +a && bash scripts/token.sh

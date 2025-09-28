@@ -1,5 +1,5 @@
 # Docker image settings
-IMAGE_REPOSITORY ?= cr.makina.rocks/inho.kim/auth-test
+IMAGE_REPOSITORY ?= ihnokim/auth-test
 IMAGE_TAG ?= 0.1.0
 PLATFORMS = linux/amd64,linux/arm64
 

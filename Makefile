@@ -374,6 +374,39 @@ istio: install-istio ## Deploy istio base and istiod charts
 	@$(MAKE) ai-platform-gateway
 	@$(MAKE) internal-dns
 
+virtualservice: ## Deploy virtual service
+	@if [ -z "${name}" ]; then \
+		echo "❌ Error: name is not set"; \
+		echo "💡 Usage: make virtualservice name=service-name port=8080 namespace=default service_name=my-service subdomain=test"; \
+		exit 1; \
+	fi
+	@if [ -z "${port}" ]; then \
+		echo "❌ Error: port is not set"; \
+		echo "💡 Usage: make virtualservice name=service-name port=8080 namespace=default service_name=my-service subdomain=test"; \
+		exit 1; \
+	fi
+	@if [ -z "${namespace}" ]; then \
+		echo "❌ Error: namespace is not set"; \
+		echo "💡 Usage: make virtualservice name=service-name port=8080 namespace=default service_name=my-service subdomain=test"; \
+		exit 1; \
+	fi
+	@if [ -z "${service_name}" ]; then \
+		echo "❌ Error: service_name is not set"; \
+		echo "💡 Usage: make virtualservice name=service-name port=8080 namespace=default service_name=my-service subdomain=test"; \
+		exit 1; \
+	fi
+	@if [ -z "${subdomain}" ]; then \
+		echo "❌ Error: subdomain is not set"; \
+		echo "💡 Usage: make virtualservice name=service-name port=8080 namespace=default service_name=my-service subdomain=test"; \
+		exit 1; \
+	fi
+	@NAME=${name} PORT=${port} NAMESPACE=${namespace} SERVICE_NAME=${service_name} SUBDOMAIN=${subdomain} set -a && source .env && set +a && envsubst < manifests/virtualservice.yaml | kubectl apply -f -
+	@echo "✅ Virtual service deployed!"
+
+destroy-virtualservice: ## Destroy virtual service
+	@kubectl delete virtualservice ${name} -n ${namespace}
+	@echo "✅ Virtual service destroyed!"
+
 add-cnpg-repo: ## Add cnpg repo
 	@helm repo add cnpg https://cloudnative-pg.github.io/charts
 	@helm repo update
@@ -515,14 +548,6 @@ install-keycloak:
 		echo "✅ bitnami/keycloak chart already exists (helm/keycloak/Chart.yaml found)"; \
 	fi
 
-keycloak-vs: ## Deploy keycloak virtual service
-	@set -a && source .env && set +a && envsubst < manifests/keycloak-vs.yaml | kubectl apply -f -
-	@echo "✅ Keycloak virtual service deployed!"
-
-destroy-keycloak-vs: ## Destroy keycloak virtual service
-	@kubectl delete virtualservice keycloak -n ${KEYCLOAK__NAMESPACE}
-	@echo "✅ Keycloak virtual service destroyed!"
-
 # TODO: values set 값들 수정해야 함
 keycloak: install-keycloak ## Install keycloak chart
 	@$(MAKE) database name=${KEYCLOAK__DATABASE_NAME}
@@ -544,9 +569,8 @@ keycloak: install-keycloak ## Install keycloak chart
 		--set extraEnvVars[0].value=keycloak.${DOMAIN_HOST} \
 		--set extraEnvVars[1].name=KC_PROXY_HEADERS \
 		--set extraEnvVars[1].value=xforwarded
-	@$(MAKE) keycloak-vs
+	@$(MAKE) virtualservice name=keycloak port=${KEYCLOAK__HTTP_PORT} namespace=${KEYCLOAK__NAMESPACE} service_name=${KEYCLOAK__SERVICE_NAME} subdomain=keycloak
 	@echo "✅ Keycloak installed!"
-
 # 		--set extraEnvVars[1].name=KC_HOSTNAME_STRICT
 # 		--set-string extraEnvVars[1].value=false
 #
@@ -561,7 +585,7 @@ keycloak: install-keycloak ## Install keycloak chart
 
 destroy-keycloak: ## Destroy keycloak
 	@helm uninstall keycloak -n ${KEYCLOAK__NAMESPACE}
-	@$(MAKE) destroy-keycloak-vs
+	@$(MAKE) destroy-virtualservice name=keycloak namespace=${KEYCLOAK__NAMESPACE}
 	@echo "✅ Keycloak uninstalled!"
 
 add-gitea-repo: ## Add gitea repo
@@ -634,21 +658,13 @@ gitea: install-gitea ## Install gitea chart
 		--set extraVolumeMounts[0].mountPath=/etc/ssl/certs/${CLUSTER_NAME}-ca.crt \
 		--set extraVolumeMounts[0].subPath=${CLUSTER_NAME}-ca.crt \
 		--set extraVolumeMounts[0].readOnly=true
-	@$(MAKE) gitea-vs
+	@$(MAKE) virtualservice name=gitea port=${GITEA__HTTP_PORT} namespace=${GITEA__NAMESPACE} service_name=${GITEA__SERVICE_NAME} subdomain=gitea
 	@echo "✅ Gitea installed!"
 
 destroy-gitea: ## Destroy gitea chart
 	@helm uninstall gitea -n ${GITEA__NAMESPACE}
-	@$(MAKE) destroy-gitea-vs
+	@$(MAKE) destroy-virtualservice name=gitea namespace=${GITEA__NAMESPACE}
 	@echo "✅ Gitea uninstalled!"
-
-gitea-vs: ## Deploy gitea virtual service
-	@set -a && source .env && set +a && envsubst < manifests/gitea-vs.yaml | kubectl apply -f -
-	@echo "✅ Gitea virtual service deployed!"
-
-destroy-gitea-vs: ## Destroy gitea virtual service
-	@kubectl delete virtualservice gitea -n ${GITEA__NAMESPACE}
-	@echo "✅ Gitea virtual service destroyed!"
 
 add-airflow-repo: ## Add airflow repo
 	@helm repo add apache-airflow https://airflow.apache.org
@@ -662,14 +678,6 @@ install-airflow: ## Install airflow chart
 		helm pull apache-airflow/airflow --version ${AIRFLOW__CHART_VERSION} --untar --untardir helm; \
 		echo "✅ apache-airflow/airflow chart version ${AIRFLOW__CHART_VERSION} downloaded to helm/airflow/"; \
 	fi
-
-airflow-vs: ## Deploy airflow virtual service
-	@set -a && source .env && set +a && envsubst < manifests/airflow-vs.yaml | kubectl apply -f -
-	@echo "✅ Airflow virtual service deployed!"
-
-destroy-airflow-vs: ## Destroy airflow virtual service
-	@kubectl delete virtualservice airflow -n ${AIRFLOW__NAMESPACE}
-	@echo "✅ Airflow virtual service destroyed!"
 
 airflow: install-airflow ## Install airflow chart
 # --set brokerdata.brokerUrl=redis://redis-master:6379/0
@@ -718,12 +726,12 @@ airflow: install-airflow ## Install airflow chart
 		--set webserver.extraVolumeMounts[0].mountPath=/opt/airflow/dags \
 		--set webserver.extraVolumeMounts[0].readOnly=false \
 		-f manifests/airflow-config.yaml
-	@$(MAKE) airflow-vs
+	@$(MAKE) virtualservice name=airflow port=${AIRFLOW__HTTP_PORT} namespace=${AIRFLOW__NAMESPACE} service_name=${AIRFLOW__SERVICE_NAME} subdomain=airflow
 	@echo "✅ Airflow installed!"
 
 destroy-airflow: ## Destroy airflow chart
 	@helm uninstall airflow -n ${AIRFLOW__NAMESPACE} --wait
-	-@$(MAKE) destroy-airflow-vs
+	-@$(MAKE) destroy-virtualservice name=airflow namespace=${AIRFLOW__NAMESPACE}
 	-@kubectl delete pvc -l release=airflow -n ${AIRFLOW__NAMESPACE}
 	-@kubectl delete secret ${AIRFLOW__ADMIN_SECRET} -n ${OPENMETADATA__NAMESPACE}
 	-@$(MAKE) destroy-database name=${AIRFLOW__DATABASE_NAME}
@@ -743,14 +751,6 @@ install-openmetadata: ## Install openmetadata chart
 	else \
 		echo "✅ open-metadata/openmetadata chart already exists (helm/openmetadata/Chart.yaml found)"; \
 	fi
-
-openmetadata-vs: ## Deploy openmetadata virtual service
-	@set -a && source .env && set +a && envsubst < manifests/openmetadata-vs.yaml | kubectl apply -f -
-	@echo "✅ Openmetadata virtual service deployed!"
-
-destroy-openmetadata-vs: ## Destroy openmetadata virtual service
-	@kubectl delete virtualservice openmetadata -n ${OPENMETADATA__NAMESPACE}
-	@echo "✅ Openmetadata virtual service destroyed!"
 
 openmetadata: install-openmetadata ## Install openmetadata chart
 	-@kubectl create namespace ${OPENMETADATA__NAMESPACE} || true
@@ -806,12 +806,12 @@ openmetadata: install-openmetadata ## Install openmetadata chart
 		--set openmetadata.config.pipelineServiceClientConfig.auth.username=${AIRFLOW__ADMIN_USERNAME} \
 		--set openmetadata.config.pipelineServiceClientConfig.auth.password.secretRef=${AIRFLOW__ADMIN_SECRET} \
 		--set openmetadata.config.pipelineServiceClientConfig.auth.password.secretKey=${AIRFLOW__ADMIN_SECRET_KEY}
-	@$(MAKE) openmetadata-vs
+	@$(MAKE) virtualservice name=openmetadata port=${OPENMETADATA__HTTP_PORT} namespace=${OPENMETADATA__NAMESPACE} service_name=${OPENMETADATA__SERVICE_NAME} subdomain=openmetadata
 	@echo "✅ Openmetadata installed!"
 
 destroy-openmetadata: ## Destroy openmetadata chart
 	@helm uninstall openmetadata -n ${OPENMETADATA__NAMESPACE} --wait
-	-@$(MAKE) destroy-openmetadata-vs
+	-@$(MAKE) destroy-virtualservice name=openmetadata namespace=${OPENMETADATA__NAMESPACE}
 	@$(MAKE) destroy-database name=${OPENMETADATA__DATABASE_NAME}
 	@kubectl delete secret ${OPENMETADATA__ADMIN_SECRET} -n ${OPENMETADATA__NAMESPACE}
 	@echo "✅ Openmetadata uninstalled!"
@@ -831,14 +831,6 @@ install-opensearch: ## Install opensearch chart
 		echo "✅ opensearch/opensearch chart already exists (helm/opensearch/Chart.yaml found)"; \
 	fi
 
-opensearch-vs: ## Deploy opensearch virtual service
-	@set -a && source .env && set +a && envsubst < manifests/opensearch-vs.yaml | kubectl apply -f -
-	@echo "✅ Opensearch virtual service deployed!"
-
-destroy-opensearch-vs: ## Destroy opensearch virtual service
-	@kubectl delete virtualservice opensearch -n ${OPENSEARCH__NAMESPACE}
-	@echo "✅ Opensearch virtual service destroyed!"
-
 opensearch: install-opensearch ## Install opensearch chart
 	-@kubectl create namespace ${OPENSEARCH__NAMESPACE} || true
 	-@kubectl create namespace ${OPENMETADATA__NAMESPACE} || true
@@ -854,7 +846,7 @@ opensearch: install-opensearch ## Install opensearch chart
 		--set extraEnvs[1].name=plugins.security.ssl.http.enabled \
 		--set-string extraEnvs[1].value=false \
 		--set replicas=${OPENSEARCH__REPLICAS}
-	@$(MAKE) opensearch-vs
+	@$(MAKE) virtualservice name=opensearch port=${OPENSEARCH__HTTP_PORT} namespace=${OPENSEARCH__NAMESPACE} service_name=${OPENSEARCH__SERVICE_NAME} subdomain=opensearch
 	@echo "✅ Opensearch installed!"
 
 # Opensearch HTTP 연결 관련 issue 참고
@@ -863,7 +855,7 @@ opensearch: install-opensearch ## Install opensearch chart
 destroy-opensearch: ## Destroy opensearch chart
 	-@kubectl delete secret ${OPENSEARCH__ADMIN_SECRET} -n ${OPENMETADATA__NAMESPACE}
 	-@helm uninstall opensearch -n ${OPENSEARCH__NAMESPACE}
-	-@$(MAKE) destroy-opensearch-vs
+	-@$(MAKE) destroy-virtualservice name=opensearch namespace=${OPENSEARCH__NAMESPACE}
 	-@kubectl delete pvc -l app.kubernetes.io/instance=opensearch -n ${OPENSEARCH__NAMESPACE}
 	@echo "✅ Opensearch uninstalled!"
 

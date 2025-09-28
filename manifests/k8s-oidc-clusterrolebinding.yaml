@@ -5,8 +5,8 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-admin   # 원하는 권한 (여기서는 cluster-admin 전체 권한)
+  name: cluster-admin # 원하는 권한 (여기서는 cluster-admin 전체 권한)
 subjects:
 - kind: Group
-  name: root            # 토큰의 groups 값과 동일해야 함
+  name: root # 토큰의 groups 값과 동일해야 함
   apiGroup: rbac.authorization.k8s.io

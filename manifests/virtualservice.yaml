@@ -1,19 +1,19 @@
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
-  name: opensearch
-  namespace: ${OPENSEARCH__NAMESPACE}
+  name: ${NAME}
+  namespace: ${NAMESPACE}
 spec:
   gateways:
     - ${ISTIO__NAMESPACE}/ai-platform-gateway
   hosts:
-    - opensearch.${DOMAIN_HOST}
+    - ${SUBDOMAIN}.${DOMAIN_HOST}
   http:
     - match:
         - uri:
             prefix: /
       route:
         - destination:
-            host: opensearch-cluster-master.${OPENSEARCH__NAMESPACE}.svc.cluster.local
+            host: ${SERVICE_NAME}.${NAMESPACE}.svc.cluster.local
             port:
-              number: ${OPENSEARCH__HTTP_PORT}
+              number: ${PORT}

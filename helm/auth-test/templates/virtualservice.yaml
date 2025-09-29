@@ -1,0 +1,23 @@
+{{- if .Values.virtualService.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "auth-test.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "auth-test.labels" . | nindent 4 }}
+spec:
+  gateways:
+    - {{ .Values.virtualService.istio.namespace }}/ai-platform-gateway
+  hosts:
+{{- include "auth-test.hosts" . | nindent 4 }}
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: {{ include "auth-test.fullname" . }}
+            port:
+              number: {{ .Values.service.port }}
+{{- end }}

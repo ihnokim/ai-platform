@@ -1,0 +1,12 @@
+port=53
+
+# 나머지는 실제 DNS로 전달
+server=8.8.8.8
+server=8.8.4.4
+
+# 요청된 도메인만 처리
+domain-needed
+bogus-priv
+
+# 로그 (디버깅용)
+log-queries

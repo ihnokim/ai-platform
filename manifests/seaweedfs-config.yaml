@@ -1,0 +1,24 @@
+master:
+  port: ${SEAWEEDFS__MASTER_HTTP_PORT}
+  replicas: ${SEAWEEDFS__MASTER_REPLICAS}
+  nodeSelector: |
+    kubernetes.io/arch: ${ARCH}
+
+volume:
+  port: ${SEAWEEDFS__VOLUME_HTTP_PORT}
+  replicas: ${SEAWEEDFS__VOLUME_REPLICAS}
+  nodeSelector: |
+    kubernetes.io/arch: ${ARCH}
+
+filer:
+  port: ${SEAWEEDFS__FILER_HTTP_PORT}
+  replicas: ${SEAWEEDFS__FILER_REPLICAS}
+  nodeSelector: |
+    kubernetes.io/arch: ${ARCH}
+
+s3:
+  enabled: true
+  port: ${SEAWEEDFS__S3_HTTP_PORT}
+  replicas: ${SEAWEEDFS__S3_REPLICAS}
+  nodeSelector: |
+    kubernetes.io/arch: ${ARCH}

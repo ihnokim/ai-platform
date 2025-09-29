@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: ${NAME}
+  namespace: ${NAMESPACE}
+spec:
+  gateways:
+    - ${ISTIO__NAMESPACE}/ai-platform-gateway
+  hosts:
+    - ${SUBDOMAIN}.${DOMAIN_HOST}
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: ${SERVICE_NAME}.${NAMESPACE}.svc.cluster.local
+            port:
+              number: ${PORT}

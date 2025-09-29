@@ -1,0 +1,4 @@
+host: platform.ai
+tls:
+  enabled: false
+  credentialName: ~

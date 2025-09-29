@@ -1,0 +1,5 @@
+extraEnv: |
+  - name: AIRFLOW__API__AUTH_BACKENDS
+    value: 'airflow.api.auth.backend.basic_auth'
+  - name: AIRFLOW__OPENMETADATA_AIRFLOW_APIS__DAG_GENERATED_CONFIGS
+    value: /opt/airflow/dags

@@ -1,239 +1,66 @@
 # AI Platform
 
-A comprehensive Kubernetes platform with integrated authentication, Git hosting, and workflow management.
+A comprehensive multi-tenant, on-premise Kubernetes platform that provides integrated authentication-based Git hosting, workflow management, and execution environment for applications and AI models.
 
-## Features
+## Overview
 
-- 🔐 **Keycloak Integration**: Centralized authentication and authorization
-- 🐙 **Gitea**: Self-hosted Git service with OIDC integration
-- ☁️ **Kubernetes OIDC**: kubectl authentication via Keycloak
-- 🚀 **Airflow**: Workflow orchestration and scheduling
-- 🗄️ **PostgreSQL**: CloudNativePG for high availability
-- 🌐 **Istio**: Service mesh and traffic management
+This platform delivers a complete enterprise-grade solution for organizations seeking a unified, self-hosted development and deployment environment with the following key capabilities:
+
+### 🏢 Multi-Tenancy Support
+- **Isolated Namespaces**: Complete resource isolation between tenants
+- **RBAC Integration**: Fine-grained role-based access control per tenant
+- **Quota Management**: Resource limits and quotas per tenant organization
+
+### 🔐 Integrated Authentication & Authorization
+- **Centralized Identity Management**: Keycloak-based SSO across all platform services
+- **OIDC Integration**: Standards-based authentication for Kubernetes API and applications
+- **Fine-grained Permissions**: Project-level and service-level access control
+- **External Identity Providers**: Support for LDAP, SAML, and social login integration
+
+### 🛠️ Git Hosting & Repository Management
+- **Enterprise Git Server**: Self-hosted Gitea with OAuth2 integration
+- **Repository Isolation**: Per-tenant repository access and management
+- **Pull Request Workflows**: Built-in code review and collaboration features
+- **Git-based CI/CD Triggers**: Automated workflow triggering from repository events
+
+### ⚙️ Workflow Management & Orchestration
+- **Apache Airflow Integration**: Sophisticated DAG-based workflow orchestration
+- **Multi-tenant Workflows**: Isolated workflow execution per tenant
+- **Metadata Management**: OpenMetadata for comprehensive data lineage and governance
+- **Search & Discovery**: Opensearch-powered metadata search and analytics
+
+### 🚀 Application & AI Model Execution
+- **Containerized Workloads**: Full support for Docker and OCI containers
+- **AI/ML Model Serving**: Optimized environment for machine learning model deployment
+- **Auto-scaling**: Horizontal and vertical pod autoscaling based on demand
+- **Service Mesh**: Istio-based traffic management and observability
+- **Storage Solutions**: Distributed object storage with SeaweedFS
+
+### 🗄️ Data Management
+- **PostgreSQL Clusters**: High-availability database clusters with CloudNative-PG
+- **Object Storage**: S3-compatible distributed storage for large datasets
+- **Data Lineage**: Complete tracking of data flows and transformations
+- **Backup & Recovery**: Automated backup strategies for critical data
 
 ## Quick Start
 
 ### Prerequisites
 
-- Docker Desktop with Kubernetes enabled
+- Docker
 - k3d for local cluster management
 - Helm 3.x
-- kubectl
 - make
-
-### Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd ai-platform
-   ```
-
-2. **Start the platform**
-   ```bash
-   make test-cluster    # Create local Kubernetes cluster
-   make istio          # Install Istio service mesh
-   make cnpg           # Install PostgreSQL cluster
-   make keycloak       # Install Keycloak
-   make gitea          # Install Gitea with OIDC
-   make k8s-oidc       # Setup Kubernetes OIDC authentication
-   ```
-
-3. **Authenticate with kubectl**
-   ```bash
-   make k8s-oidc-auth
-   # Follow the prompts to authenticate
-   ```
-
-## Authentication
-
-### Keycloak OIDC Integration
-
-The platform uses Keycloak as the central identity provider with OIDC integration for:
-
-- **Gitea**: Git repository access via Keycloak login
-- **Kubernetes**: kubectl authentication via OIDC tokens
-- **Airflow**: Workflow access control
-
-### User Groups
-
-| Group | Permissions | Description |
-|-------|-------------|-------------|
-| `ai-developers` | Read-only | View resources, logs, and status |
-| `ai-operators` | Limited write | Deploy and manage applications |
-| `ai-admins` | Full access | Complete cluster administration |
-
-### Sample Users
-
-| Username | Password | Group | Access |
-|----------|----------|-------|--------|
-| `developer` | `developer123` | `ai-developers` | Read-only |
-| `k8s-admin` | `admin123` | `ai-admins` | Full access |
-
-## Services
-
-### Keycloak
-- **URL**: https://keycloak.platform.ai
-- **Admin Console**: https://keycloak.platform.ai/auth/admin
-- **Realm**: `platform`
-
-### Gitea
-- **URL**: https://gitea.platform.ai
-- **Admin**: `gitea_admin` / `r8sA8CPHD9!bt6d`
-
-### Airflow
-- **URL**: https://airflow.platform.ai
-- **Admin**: Configured via environment variables
-
-## Development
-
-### Local Development
-
-1. **Start DNS resolution**
-   ```bash
-   make dns
-   ```
-
-2. **Access services**
-   - All services are accessible via `*.platform.ai` domains
-   - DNS automatically resolves to local cluster
-
-3. **Stop services**
-   ```bash
-   make destroy-dns
-   ```
-
-### Kubernetes OIDC Authentication
-
-1. **Setup OIDC client**
-   ```bash
-   make k8s-oidc-setup
-   ```
-
-2. **Apply RBAC rules**
-   ```bash
-   make k8s-oidc-rbac
-   ```
-
-3. **Authenticate**
-   ```bash
-   make k8s-oidc-auth
-   ```
-
-4. **Test access**
-   ```bash
-   kubectl get pods
-   kubectl auth can-i get nodes
-   ```
-
-## Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Keycloak      │    │   Kubernetes    │    │   Applications  │
-│   (OIDC)        │◄──►│   (OIDC Auth)   │◄──►│   (Gitea, etc.) │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-        │                       │                       │
-        │                       │                       │
-        ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   User Groups   │    │   RBAC Rules    │    │   Service Mesh  │
-│   & Permissions │    │   & Policies    │    │   (Istio)       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
-
-## Configuration
-
-### Environment Variables
-
-Key configuration variables in `.env`:
-
-```bash
-# Domain configuration
-DOMAIN_HOST=platform.ai
-
-# Keycloak
-KEYCLOAK__NAMESPACE=keycloak
-KEYCLOAK__REALM_NAME=platform
-KEYCLOAK__ADMIN_USERNAME=admin
-KEYCLOAK__ADMIN_PASSWORD=admin123
-
-# Gitea
-GITEA__NAMESPACE=gitea
-GITEA__ADMIN_USERNAME=gitea_admin
-GITEA__ADMIN_PASSWORD=r8sA8CPHD9!bt6d
-
-# Database
-CNPG__CLUSTER_NAMESPACE=postgres
-CNPG__ADMIN_USERNAME=postgres
-CNPG__ADMIN_PASSWORD=postgres123
-```
-
-### Customization
-
-- **Add new services**: Create Helm charts in `helm/` directory
-- **Modify RBAC**: Update `manifests/k8s-oidc-config.yaml`
-- **Configure OIDC**: Modify `scripts/keycloak-k8s-setup.sh`
-
-## Troubleshooting
-
-### Common Issues
-
-1. **DNS Resolution**
-   ```bash
-   # Check DNS configuration
-   nslookup keycloak.platform.ai
-   
-   # Restart DNS
-   make destroy-dns && make dns
-   ```
-
-2. **Authentication Issues**
-   ```bash
-   # Check Keycloak status
-   kubectl get pods -n keycloak
-   
-   # Verify OIDC configuration
-   curl https://keycloak.platform.ai/auth/realms/platform/.well-known/openid-configuration
-   ```
-
-3. **Kubernetes Access**
-   ```bash
-   # Check current context
-   kubectl config current-context
-   
-   # Re-authenticate
-   make k8s-oidc-auth
-   ```
-
-### Logs
-
-```bash
-# Keycloak logs
-kubectl logs -n keycloak -l app.kubernetes.io/name=keycloak
-
-# Gitea logs
-kubectl logs -n gitea -l app.kubernetes.io/name=gitea
-
-# API server logs
-kubectl logs -n kube-system kube-apiserver-<node-name>
-```
+- kubectl with oidc-login plugin
+- jq for JSON processing
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test with `make test-cluster`
+4. Test with ```make test-cluster```
 5. Submit a pull request
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For issues and questions:
-- Check the troubleshooting section
-- Review the documentation in `docs/`
-- Open an issue on GitHub

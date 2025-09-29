@@ -17,7 +17,6 @@ else
 fi
 
 GITEA__URL="https://gitea.${DOMAIN_HOST}"
-GITEA__ADMIN_GROUP_NAME="gitea_admin"
 
 CLIENT_ID="gitea"
 REALM_NAME="${REALM_NAME:-${KEYCLOAK__REALM_NAME}}"
@@ -39,59 +38,59 @@ CLIENT_CONFIG='{
   "adminUrl": "'${GITEA__URL}'",
   "baseUrl": "'${GITEA__URL}'",
   "redirectUris": [
-      "'${GITEA__URL}'/user/oauth2/keycloak/callback"
+    "'${GITEA__URL}'/user/oauth2/keycloak/callback"
   ],
   "webOrigins": [
-      "'${GITEA__URL}'"
+    "'${GITEA__URL}'"
   ],
   "protocol": "openid-connect",
   "attributes": {
-      "saml.assertion.signature": "false",
-      "saml.force.post.binding": "false",
-      "saml.multivalued.roles": "false",
-      "saml.encrypt": "false",
-      "saml.server.signature": "false",
-      "saml.server.signature.keyinfo.ext": "false",
-      "exclude.session.state.from.auth.response": "false",
-      "saml_force_name_id_format": "false",
-      "saml.client.signature": "false",
-      "tls.client.certificate.bound.access.tokens": "false",
-      "post.logout.redirect.uris": "'${GITEA__URL}'",
-      "saml.authnstatement": "false",
-      "display.on.consent.screen": "false",
-      "saml.onetimeuse.condition": "false"
+    "saml.assertion.signature": "false",
+    "saml.force.post.binding": "false",
+    "saml.multivalued.roles": "false",
+    "saml.encrypt": "false",
+    "saml.server.signature": "false",
+    "saml.server.signature.keyinfo.ext": "false",
+    "exclude.session.state.from.auth.response": "false",
+    "saml_force_name_id_format": "false",
+    "saml.client.signature": "false",
+    "tls.client.certificate.bound.access.tokens": "false",
+    "post.logout.redirect.uris": "'${GITEA__URL}'",
+    "saml.authnstatement": "false",
+    "display.on.consent.screen": "false",
+    "saml.onetimeuse.condition": "false"
   },
   "authenticationFlowBindingOverrides": {},
   "fullScopeAllowed": true,
   "nodeReRegistrationTimeout": -1,
   "protocolMappers": [
       {
-          "name": "username",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-property-mapper",
-          "consentRequired": false,
-          "config": {
-              "userinfo.token.claim": "true",
-              "user.attribute": "username",
-              "id.token.claim": "true",
-              "access.token.claim": "true",
-              "claim.name": "preferred_username",
-              "jsonType.label": "String"
-          }
+        "name": "username",
+        "protocol": "openid-connect",
+        "protocolMapper": "oidc-usermodel-property-mapper",
+        "consentRequired": false,
+        "config": {
+          "userinfo.token.claim": "true",
+          "user.attribute": "username",
+          "id.token.claim": "true",
+          "access.token.claim": "true",
+          "claim.name": "preferred_username",
+          "jsonType.label": "String"
+        }
       },
       {
-          "name": "email",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-property-mapper",
-          "consentRequired": false,
-          "config": {
-              "userinfo.token.claim": "true",
-              "user.attribute": "email",
-              "id.token.claim": "true",
-              "access.token.claim": "true",
-              "claim.name": "email",
-              "jsonType.label": "String"
-          }
+        "name": "email",
+        "protocol": "openid-connect",
+        "protocolMapper": "oidc-usermodel-property-mapper",
+        "consentRequired": false,
+        "config": {
+          "userinfo.token.claim": "true",
+          "user.attribute": "email",
+          "id.token.claim": "true",
+          "access.token.claim": "true",
+          "claim.name": "email",
+          "jsonType.label": "String"
+        }
       },
       {
         "name": "groups",
@@ -142,23 +141,23 @@ CLIENT_CONFIG='{
 
 echo "🔍 Checking for existing Gitea client..."
 if client_exists "${CLIENT_ID}" "${REALM_NAME}"; then
-    echo "Gitea client already exists..."
+  echo "Gitea client already exists..."
 else
-    echo "🆕 No existing Gitea client found"
+  echo "🆕 No existing Gitea client found"
   echo "🏗️ Creating new Gitea client..."
   if api_call POST "/admin/realms/${REALM_NAME}/clients" "$CLIENT_CONFIG" >/dev/null; then
-      echo "✅ Gitea OIDC client created successfully"
+    echo "✅ Gitea OIDC client created successfully"
   else
-      echo "❌ Failed to create Gitea client"
-      exit 1
+    echo "❌ Failed to create Gitea client"
+    exit 1
   fi
 fi
 
 echo "🔐 Getting client secret..."
 CLIENT_UUID=$(get_client_uuid "${CLIENT_ID}" "${REALM_NAME}")
 if [ -z "$CLIENT_UUID" ]; then
-    echo "❌ Failed to get client UUID"
-    exit 1
+  echo "❌ Failed to get client UUID"
+  exit 1
 fi
 
 CLIENT_SECRET=$(get_client_secret "${CLIENT_ID}" "${REALM_NAME}" "${CLIENT_UUID}")
@@ -170,35 +169,35 @@ echo "🎯 Creating Gitea client roles..."
 
 # Owner role (조직 소유자 - 최고 권한)
 api_call POST "/admin/realms/${REALM_NAME}/clients/${CLIENT_UUID}/roles" '{
-      "name": "gitea:owner",
-      "description": "Gitea organization owner - full control",
-      "composite": false,
-      "clientRole": true
-    }' >/dev/null || echo "  ⚠️  gitea:owner role already exists"
+  "name": "gitea:owner",
+  "description": "Gitea organization owner - full control",
+  "composite": false,
+  "clientRole": true
+}' >/dev/null || echo "  ⚠️  gitea:owner role already exists"
 
 # Admin role (관리자 권한)
 api_call POST "/admin/realms/${REALM_NAME}/clients/${CLIENT_UUID}/roles" '{
-      "name": "gitea:admin",
-      "description": "Gitea admin - repository administration",
-      "composite": false,
-      "clientRole": true
-    }' >/dev/null || echo "  ⚠️  gitea:admin role already exists"
+  "name": "gitea:admin",
+  "description": "Gitea admin - repository administration",
+  "composite": false,
+  "clientRole": true
+}' >/dev/null || echo "  ⚠️  gitea:admin role already exists"
 
 # Write role (쓰기 권한)
 api_call POST "/admin/realms/${REALM_NAME}/clients/${CLIENT_UUID}/roles" '{
-      "name": "gitea:write",
-      "description": "Gitea write - push access",
-      "composite": false,
-      "clientRole": true
-    }' >/dev/null || echo "  ⚠️  gitea:write role already exists"
+  "name": "gitea:write",
+  "description": "Gitea write - push access",
+  "composite": false,
+  "clientRole": true
+}' >/dev/null || echo "  ⚠️  gitea:write role already exists"
 
 # Read role (읽기 권한)
 api_call POST "/admin/realms/${REALM_NAME}/clients/${CLIENT_UUID}/roles" '{
-      "name": "gitea:read",
-      "description": "Gitea read - pull access only",
-      "composite": false,
-      "clientRole": true
-    }' >/dev/null || echo "  ⚠️  gitea:read role already exists"
+  "name": "gitea:read",
+  "description": "Gitea read - pull access only",
+  "composite": false,
+  "clientRole": true
+}' >/dev/null || echo "  ⚠️  gitea:read role already exists"
 
 echo "✅ Gitea client roles created (gitea:owner, gitea:admin, gitea:write, gitea:read)"
 

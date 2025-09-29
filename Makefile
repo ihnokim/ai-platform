@@ -660,6 +660,7 @@ install-gitea: ## Install gitea chart
 gitea: install-gitea ## Install gitea chart
 	-@$(MAKE) ca namespace=${GITEA__NAMESPACE}
 	@$(MAKE) database name=${GITEA__DATABASE_NAME}
+	-@REALM_NAME=${KEYCLOAK__REALM_NAME} bash scripts/gitea.sh
 	@echo "🔑 Getting Gitea client secret from Keycloak..."
 	@GITEA__CLIENT_SECRET=$$(bash scripts/keycloak.sh get-client-secret gitea); \
 	if [ $$? -ne 0 ] || [ -z "$$GITEA__CLIENT_SECRET" ]; then \
@@ -684,7 +685,7 @@ gitea: install-gitea ## Install gitea chart
 		--set gitea.config.database.NAME=${GITEA__DATABASE_NAME} \
 		--set gitea.config.database.USER=${GITEA__DATABASE_USERNAME} \
 		--set gitea.config.database.PASSWD=${GITEA__DATABASE_PASSWORD} \
-		--set gitea.oauth[0].name=Keycloak \
+		--set gitea.oauth[0].name=keycloak \
 		--set gitea.oauth[0].provider=openidConnect \
 		--set gitea.oauth[0].key=gitea \
 		--set gitea.oauth[0].secret=$$GITEA__CLIENT_SECRET \
@@ -718,6 +719,8 @@ gitea: install-gitea ## Install gitea chart
 destroy-gitea: ## Destroy gitea chart
 	@helm uninstall gitea -n ${GITEA__NAMESPACE}
 	@$(MAKE) destroy-virtualservice name=gitea namespace=${GITEA__NAMESPACE}
+	@$(MAKE) destroy-database name=${GITEA__DATABASE_NAME}
+	@REALM_NAME=${KEYCLOAK__REALM_NAME} bash scripts/keycloak.sh remove-client gitea
 	@echo "✅ Gitea uninstalled!"
 
 .PHONY: add-airflow-repo

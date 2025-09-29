@@ -8,15 +8,12 @@ fi
 
 KEYCLOAK__URL="https://keycloak.${DOMAIN_HOST}"
 KEYCLOAK__ADMIN_TOKEN=""
-KEYCLOAK__TOKEN_EXPIRY=""
 
 get_admin_token() {
     local keycloak_url="${1:-$KEYCLOAK__URL}"
     local admin_username="${2:-$KEYCLOAK__ADMIN_USERNAME}"
     local admin_password="${3:-$KEYCLOAK__ADMIN_PASSWORD}"
     local realm_name="${4:-$KEYCLOAK__REALM_NAME}"
-
-    echo "🔑 Getting admin token from ${keycloak_url}..." >&2
 
     local token=$(curl -s -k -X POST \
         "${keycloak_url}/realms/${realm_name}/protocol/openid-connect/token" \
@@ -31,7 +28,69 @@ get_admin_token() {
         return 1
     fi
 
+    KEYCLOAK__ADMIN_TOKEN="$token"
     echo "$token"
+}
+
+get_client_uuid() {
+    local client_id="$1"
+    local realm_name="${2:-$KEYCLOAK__REALM_NAME}"
+
+    # Temporarily disable set -e to handle expected failures
+    set +e
+    local client_data
+    client_data=$(api_call GET "/admin/realms/$realm_name/clients?clientId=$client_id")
+    local result=$?
+    set -e
+
+    if [[ $result -eq 0 ]]; then
+        # Extract only the JSON part (last line) and parse it
+        local json_data=$(echo "$client_data" | tail -n 1)
+        echo "$json_data" | jq -r '.[0].id // empty' 2>/dev/null
+        return 0
+    else
+        return $result
+    fi
+}
+
+client_exists() {
+    local client_id="$1"
+    local realm_name="${2:-$KEYCLOAK__REALM_NAME}"
+
+    if [[ -z "$realm_name" ]] || [[ -z "$client_id" ]]; then
+        echo "❌ client_exists: realm_name and client_id are required" >&2
+        return 2
+    fi
+
+    # Temporarily disable set -e to handle expected failures
+    set +e
+    local client_data
+    client_data=$(api_call GET "/admin/realms/$realm_name/clients?clientId=$client_id")
+    local result=$?
+    set -e
+
+    case $result in
+         0)
+             # Success - check if client exists in the array
+             local client_count
+             # Extract only the JSON part (last line) and parse it
+             local json_data=$(echo "$client_data" | tail -n 1)
+             client_count=$(echo "$json_data" | jq '. | length' 2>/dev/null)
+             if [[ "$client_count" -gt 0 ]]; then
+                 return 0  # Client exists
+             else
+                 return 1  # Client does not exist
+             fi
+             ;;
+        3)
+            # 404 - realm or client does not exist
+            return 1
+            ;;
+        *)
+            # Other error
+            return 2
+            ;;
+    esac
 }
 
 get_client_secret() {
@@ -66,9 +125,38 @@ get_client_secret() {
         echo "❌ Failed to get client secret for '${client_id}'" >&2
         return 1
     fi
-    
-    # echo "✅ Client secret retrieved for '${client_id}'" >&2
+
     echo "$client_secret"
+}
+
+remove_client() {
+    local client_id="$1"
+    local realm_name="${2:-$KEYCLOAK__REALM_NAME}"
+    
+    if [ -z "$client_id" ]; then
+        echo "❌ Error: client_id is required" >&2
+        return 1
+    fi
+
+    echo "🔍 Getting client UUID for '${client_id}' in realm '${realm_name}'..." >&2
+    
+    # Get client UUID - this also checks if client exists
+    local client_uuid=$(get_client_uuid "${client_id}" "${realm_name}")
+    if [ -z "$client_uuid" ]; then
+        echo "⚠️  Client '${client_id}' not found in realm '${realm_name}'" >&2
+        return 1
+    fi
+
+    echo "🗑️  Removing client '${client_id}' (UUID: ${client_uuid}) from realm '${realm_name}'..." >&2
+    
+    # Delete the client
+    if api_call DELETE "/admin/realms/${realm_name}/clients/${client_uuid}" >/dev/null; then
+        echo "✅ Client '${client_id}' removed successfully" >&2
+        return 0
+    else
+        echo "❌ Failed to remove client '${client_id}'" >&2
+        return 1
+    fi
 }
 
 api_call() {
@@ -181,8 +269,14 @@ main() {
         "get-client-secret")
             get_client_secret "${2:-}" "${3:-}" "${4:-}" "${5:-}"
             ;;
+        "remove-client")
+            remove_client "${2:-}" "${3:-}"
+            ;;
         "api-call")
             api_call "${2:-}" "${3:-}" "${4:-}"
+            ;;
+        "remove-client")
+            remove_client "${2:-}" "${3:-}"
             ;;
         *)
             echo "🔧 Keycloak Utility Functions" >&2
@@ -192,6 +286,7 @@ main() {
             echo "Available commands:" >&2
             echo "  get-admin-token [keycloak_url] [admin_user] [admin_password]" >&2
             echo "  get-client-secret <client_id> [realm_name] [keycloak_url] [admin_token]" >&2
+            echo "  remove-client <client_id> [realm_name]" >&2
             echo "  api-call <method> <endpoint> [data]" >&2
             echo "" >&2
             echo "Environment variables:" >&2
@@ -203,6 +298,7 @@ main() {
             echo "Examples:" >&2
             echo "  $0 get-admin-token" >&2
             echo "  $0 get-client-secret gitea" >&2
+            echo "  $0 remove-client gitea" >&2
             echo "  $0 api-call GET /realms/master" >&2
             echo "  $0 api-call POST /realms/master '{\"realm\": \"master\"}'" >&2
             exit 1

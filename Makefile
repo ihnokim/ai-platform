@@ -1049,7 +1049,10 @@ install-capsule: ## Install capsule chart
 
 .PHONY: capsule
 capsule: install-capsule ## Install capsule chart
-	@helm upgrade --install capsule projectcapsule/capsule -n ${CAPSULE__NAMESPACE} --create-namespace
+	@helm upgrade --install capsule projectcapsule/capsule -n ${CAPSULE__NAMESPACE} --create-namespace \
+		--set manager.options.capsuleUserGroups[0]=workspace:0:admin \
+		--set manager.options.forceTenantPrefix=true \
+		--set proxy.enabled=false
 	@echo "✅ Capsule installed!"
 
 .PHONY: destroy-capsule

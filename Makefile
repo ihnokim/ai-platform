@@ -1051,3 +1051,8 @@ install-capsule: ## Install capsule chart
 capsule: install-capsule ## Install capsule chart
 	@helm upgrade --install capsule projectcapsule/capsule -n ${CAPSULE__NAMESPACE} --create-namespace
 	@echo "✅ Capsule installed!"
+
+.PHONY: destroy-capsule
+destroy-capsule: ## Destroy capsule chart
+	@helm uninstall capsule -n ${CAPSULE__NAMESPACE}
+	@echo "✅ Capsule uninstalled!"

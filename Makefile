@@ -1029,3 +1029,25 @@ decode-token: ## Decode token
 		exit 1; \
 	fi; \
 	CLIENT_ID=${client-id} USERNAME=${username} PASSWORD=${password} DOMAIN_HOST=${DOMAIN_HOST} REALM_NAME=${KEYCLOAK__REALM_NAME} CLIENT_SECRET=$$CLIENT_SECRET set -a && source .env && set +a && bash scripts/token.sh
+
+.PHONY: add-capsule-repo
+add-capsule-repo: ## Add capsule repo
+	@helm repo add projectcapsule https://projectcapsule.github.io/charts
+	@helm repo update
+
+.PHONY: install-capsule
+install-capsule: ## Install capsule chart
+	@if [ ! -f "helm/capsule/Chart.yaml" ]; then \
+		echo "📦 Downloading capsule/capsule chart..."; \
+		$(MAKE) add-capsule-repo; \
+		mkdir -p helm; \
+		helm pull projectcapsule/capsule --untar --untardir helm; \
+		echo "✅ projectcapsule/capsule chart downloaded to helm/capsule/"; \
+	else \
+		echo "✅ projectcapsule/capsule chart already exists (helm/capsule/Chart.yaml found)"; \
+	fi
+
+.PHONY: capsule
+capsule: install-capsule ## Install capsule chart
+	@helm upgrade --install capsule projectcapsule/capsule -n ${CAPSULE__NAMESPACE} --create-namespace
+	@echo "✅ Capsule installed!"

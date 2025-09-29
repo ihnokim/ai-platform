@@ -1,0 +1,26 @@
+{{- if not $.Values.crds.exclusive }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "capsule.fullname" . }}-controller-manager-metrics-service
+  labels:
+    {{- include "capsule.labels" . | nindent 4 }}
+  {{- with .Values.customAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ports:
+  - port: 8080
+    name: metrics
+    protocol: TCP
+    targetPort: 8080
+  - port: 10080
+    name: health-api
+    protocol: TCP
+    targetPort: 10080
+  selector:
+    {{- include "capsule.selectorLabels" . | nindent 4 }}
+  sessionAffinity: None
+  type: ClusterIP
+{{- end }}

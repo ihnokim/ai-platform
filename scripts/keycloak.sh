@@ -96,33 +96,37 @@ client_exists() {
 get_client_secret() {
     local client_id="$1"
     local realm_name="${2:-$KEYCLOAK__REALM_NAME}"
-    local keycloak_url="${3:-$KEYCLOAK__URL}"
-    local admin_token="${4:-$(get_admin_token)}"
+    local client_uuid="${3:-}"
     
     if [ -z "$client_id" ]; then
         echo "❌ Error: client_id is required" >&2
         return 1
     fi
 
-    # echo "🔍 Getting client secret for client: ${client_id}..." >&2
+    # If client_uuid is not provided, get it from client_id
+    if [ -z "$client_uuid" ]; then
+        client_uuid=$(get_client_uuid "${client_id}" "${realm_name}")
+        
+        if [ -z "$client_uuid" ]; then
+            echo "❌ Client '${client_id}' not found in realm '${realm_name}'" >&2
+            return 1
+        fi
+    fi
 
-    # Get client UUID first
-    local client_uuid=$(curl -s -k -X GET "${keycloak_url}/admin/realms/${realm_name}/clients?clientId=${client_id}" \
-        -H "Authorization: Bearer ${admin_token}" \
-        -H "Content-Type: application/json" | jq -r '.[0].id')
+    # Get client secret using api_call
+    local secret_response=$(api_call GET "/admin/realms/${realm_name}/clients/${client_uuid}/client-secret")
+    local api_result=$?
     
-    if [ "$client_uuid" = "null" ] || [ -z "$client_uuid" ]; then
-        echo "❌ Client '${client_id}' not found in realm '${realm_name}'" >&2
+    if [ $api_result -ne 0 ]; then
+        echo "❌ Failed to get client secret for '${client_id}'" >&2
         return 1
     fi
     
-    # Get client secret
-    local client_secret=$(curl -s -k -X GET "${keycloak_url}/admin/realms/${realm_name}/clients/${client_uuid}/client-secret" \
-        -H "Authorization: Bearer ${admin_token}" \
-        -H "Content-Type: application/json" | jq -r '.value')
+    # Extract secret from response (handle potential token output)
+    local client_secret=$(echo "$secret_response" | tail -n 1 | jq -r '.value // empty' 2>/dev/null)
     
-    if [ "$client_secret" = "null" ] || [ -z "$client_secret" ]; then
-        echo "❌ Failed to get client secret for '${client_id}'" >&2
+    if [ -z "$client_secret" ]; then
+        echo "❌ Failed to parse client secret for '${client_id}'" >&2
         return 1
     fi
 
@@ -267,7 +271,7 @@ main() {
             get_admin_token "${2:-}" "${3:-}" "${4:-}"
             ;;
         "get-client-secret")
-            get_client_secret "${2:-}" "${3:-}" "${4:-}" "${5:-}"
+            get_client_secret "${2:-}" "${3:-}" "${4:-}"
             ;;
         "remove-client")
             remove_client "${2:-}" "${3:-}"
@@ -285,7 +289,7 @@ main() {
             echo "" >&2
             echo "Available commands:" >&2
             echo "  get-admin-token [keycloak_url] [admin_user] [admin_password]" >&2
-            echo "  get-client-secret <client_id> [realm_name] [keycloak_url] [admin_token]" >&2
+            echo "  get-client-secret <client_id> [realm_name] [client_uuid]" >&2
             echo "  remove-client <client_id> [realm_name]" >&2
             echo "  api-call <method> <endpoint> [data]" >&2
             echo "" >&2
@@ -298,6 +302,7 @@ main() {
             echo "Examples:" >&2
             echo "  $0 get-admin-token" >&2
             echo "  $0 get-client-secret gitea" >&2
+            echo "  $0 get-client-secret gitea master my-client-uuid" >&2
             echo "  $0 remove-client gitea" >&2
             echo "  $0 api-call GET /realms/master" >&2
             echo "  $0 api-call POST /realms/master '{\"realm\": \"master\"}'" >&2

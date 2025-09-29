@@ -20,7 +20,7 @@ GITEA__URL="https://gitea.${DOMAIN_HOST}"
 GITEA__ADMIN_GROUP_NAME="gitea_admin"
 
 CLIENT_ID="gitea"
-REALM_NAME="${REALM_NAME:-my-realm}"
+REALM_NAME="${REALM_NAME:-${KEYCLOAK__REALM_NAME}}"
 
 echo "🔐 Setting up Gitea OIDC client in Keycloak ${REALM_NAME} realm..."
 
@@ -161,7 +161,7 @@ if [ -z "$CLIENT_UUID" ]; then
     exit 1
 fi
 
-CLIENT_SECRET=$(api_call GET "/admin/realms/${REALM_NAME}/clients/${CLIENT_UUID}/client-secret" | jq -r '.value')
+CLIENT_SECRET=$(get_client_secret "${CLIENT_ID}" "${REALM_NAME}" "${CLIENT_UUID}")
 
 echo "✅ Client secret obtained: ${CLIENT_SECRET}"
 

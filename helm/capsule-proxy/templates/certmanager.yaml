@@ -1,0 +1,78 @@
+{{- if and .Values.certManager.generateCertificates .Values.options.enableSSL -}}
+  {{- if and (not .Values.certManager.externalCA.enabled) (eq .Values.certManager.issuer.kind "Issuer") -}}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "capsule-proxy.fullname" . }}-selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "capsule-proxy.fullname" . }}-selfsigned-ca
+spec:
+  isCA: true
+  commonName: {{ include "capsule-proxy.fullname" . }}-selfsigned-ca
+  secretName: {{ include "capsule-proxy.caSecretName" . }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ include "capsule-proxy.fullname" . }}-selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+  {{- end }}
+  {{- if eq .Values.certManager.issuer.kind "Issuer" }}
+---  
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "capsule-proxy.fullname" . }}-ca-issuer
+spec:
+  ca:
+    secretName: {{ include "capsule-proxy.caSecretName" . }}
+  {{- end }}    
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "capsule-proxy.fullname" . }}-serving-cert
+spec:
+  {{- with .Values.certManager.certificate.fields }}
+    {{ toYaml . | nindent 2 }}
+  {{- end }}
+  dnsNames:
+  {{- if .Values.ingress.enabled -}}
+    {{- range $hosts := .Values.ingress.hosts }}
+  - {{ $hosts.host | quote }}
+    {{- end }}
+  {{- end }}
+  {{- range $dns := .Values.certManager.certificate.dnsNames }}
+  - {{ $dns | quote }}
+  {{- end }}
+  {{- if $.Values.certManager.certificate.includeInternalServiceNames }}
+  - {{ include "capsule-proxy.fullname" . }}
+  - {{ include "capsule-proxy.fullname" . }}.{{ .Release.Namespace }}.svc
+  {{- end }}
+  {{- with .Values.certManager.certificate.ipAddresses }}
+  ipAddresses:
+    {{- range $ip := . }}
+  - {{ $ip }}
+    {{- end }}
+  {{- end }}
+  {{- with .Values.certManager.certificate.uris }}
+  uris:
+    {{- range $uri := . }}
+  - {{ $uri }}
+    {{- end }}
+  {{- end }}
+  issuerRef:
+    kind: {{ .Values.certManager.issuer.kind }}
+    name: {{ include "capsule-proxy.certManager.issuerName" . }}
+  secretName: {{ include "capsule-proxy.fullname" . }}
+  subject:
+    organizations:
+      - projectcapsule.dev
+{{- end }}

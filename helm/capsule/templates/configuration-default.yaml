@@ -1,0 +1,30 @@
+{{- if not $.Values.crds.exclusive }}
+apiVersion: capsule.clastix.io/v1beta2
+kind: CapsuleConfiguration
+metadata:
+  name: default
+  labels:
+  {{- include "capsule.labels" . | nindent 4 }}
+  annotations:
+  {{- with .Values.customAnnotations }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  enableTLSReconciler: {{ .Values.tls.enableController }}
+  overrides:
+    mutatingWebhookConfigurationName: {{ include "capsule.fullname" . }}-mutating-webhook-configuration
+    TLSSecretName: {{ include "capsule.secretTlsName" . }}
+    validatingWebhookConfigurationName: {{ include "capsule.fullname" . }}-validating-webhook-configuration
+  forceTenantPrefix: {{ .Values.manager.options.forceTenantPrefix }}
+  userGroups:
+    {{- toYaml .Values.manager.options.capsuleUserGroups  | nindent 4 }}
+  userNames:
+    {{- toYaml .Values.manager.options.userNames | nindent 4 }}
+  ignoreUserWithGroups:
+    {{- toYaml .Values.manager.options.ignoreUserWithGroups | nindent 4 }}
+  protectedNamespaceRegex: {{ .Values.manager.options.protectedNamespaceRegex | quote }}
+  {{- with .Values.manager.options.nodeMetadata }}
+  nodeMetadata:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

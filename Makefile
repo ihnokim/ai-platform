@@ -203,7 +203,7 @@ kubeconfig-oidc: ## Generate kubeconfig with OIDC authentication
 		echo "❌ namespace is not set"; \
 		exit 1; \
 	fi
-	@TARGET_NAMESPACE=${namespace} set -a && source .env && set +a && envsubst < manifests/kubeconfig.yaml
+	@TARGET_NAMESPACE=${namespace} set -a && source .env && set +a && envsubst < manifests/kubeconfig-capsule.yaml
 
 .PHONY: kubelogin-decoded-token
 kubelogin-decoded-token:
@@ -1029,3 +1029,61 @@ decode-token: ## Decode token
 		exit 1; \
 	fi; \
 	CLIENT_ID=${client-id} USERNAME=${username} PASSWORD=${password} DOMAIN_HOST=${DOMAIN_HOST} REALM_NAME=${KEYCLOAK__REALM_NAME} CLIENT_SECRET=$$CLIENT_SECRET set -a && source .env && set +a && bash scripts/token.sh
+
+.PHONY: add-capsule-repo
+add-capsule-repo: ## Add capsule repo
+	@helm repo add projectcapsule https://projectcapsule.github.io/charts
+	@helm repo update
+
+.PHONY: install-capsule
+install-capsule: ## Install capsule chart
+	@if [ ! -f "helm/capsule/Chart.yaml" ]; then \
+		echo "📦 Downloading capsule/capsule chart..."; \
+		$(MAKE) add-capsule-repo; \
+		mkdir -p helm; \
+		helm pull projectcapsule/capsule --untar --untardir helm; \
+		echo "✅ projectcapsule/capsule chart downloaded to helm/capsule/"; \
+	else \
+		echo "✅ projectcapsule/capsule chart already exists (helm/capsule/Chart.yaml found)"; \
+	fi
+
+.PHONY: capsule
+capsule: install-capsule ## Install capsule chart
+	@helm upgrade --install capsule projectcapsule/capsule -n ${CAPSULE__NAMESPACE} --create-namespace \
+		--set manager.options.capsuleUserGroups[0]=workspace:0:admin \
+		--set manager.options.forceTenantPrefix=true \
+		--set proxy.enabled=false \
+		--set rbac.resources.create=true \
+		--set rbac.resourcepoolclaims.create=true
+	@echo "✅ Capsule installed!"
+
+.PHONY: destroy-capsule
+destroy-capsule: ## Destroy capsule chart
+	@helm uninstall capsule -n ${CAPSULE__NAMESPACE}
+	@echo "✅ Capsule uninstalled!"
+
+.PHONY: install-capsule-proxy
+install-capsule-proxy: ## Install capsule proxy
+	@if [ ! -f "helm/capsule-proxy/Chart.yaml" ]; then \
+		echo "📦 Downloading capsule-proxy/capsule-proxy chart..."; \
+		$(MAKE) add-capsule-repo; \
+		mkdir -p helm; \
+		helm pull projectcapsule/capsule-proxy --untar --untardir helm; \
+		echo "✅ projectcapsule/capsule-proxy chart downloaded to helm/capsule-proxy/"; \
+	else \
+		echo "✅ projectcapsule/capsule-proxy chart already exists (helm/capsule-proxy/Chart.yaml found)"; \
+	fi
+
+.PHONY: capsule-proxy
+capsule-proxy: install-capsule-proxy ## Install capsule proxy
+	@helm upgrade --install capsule-proxy projectcapsule/capsule-proxy -n ${CAPSULE__NAMESPACE} --create-namespace \
+		--set options.enableSSL=false \
+		--set options.generateCertificates=false
+	@$(MAKE) virtualservice name=capsule-proxy port=${CAPSULE__PROXY_HTTP_PORT} namespace=${CAPSULE__NAMESPACE} service_name=${CAPSULE__PROXY_SERVICE_NAME} subdomain=capsule-proxy
+	@echo "✅ Capsule proxy installed!"
+
+.PHONY: destroy-capsule-proxy
+destroy-capsule-proxy: ## Destroy capsule proxy
+	@helm uninstall capsule-proxy -n ${CAPSULE__NAMESPACE}
+	@$(MAKE) destroy-virtualservice name=capsule-proxy namespace=${CAPSULE__NAMESPACE}
+	@echo "✅ Capsule proxy uninstalled!"

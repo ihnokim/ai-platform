@@ -1,0 +1,12 @@
+fullnameOverride: capsule
+manager:
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+  rbac:
+    create: true
+    existingClusterRoles:
+    - "view"
+    existingRoles:
+    - "some-role"

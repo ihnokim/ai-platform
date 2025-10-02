@@ -1,0 +1,25 @@
+{{- if not $.Values.crds.exclusive }}
+  {{- if eq .Values.manager.kind "Deployment" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "capsule.controllerName" . }}
+  labels:
+    {{- include "capsule.labels" . | nindent 4 }}
+  {{- with .Values.customAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.manager.deploymentStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "capsule.selectorLabels" . | nindent 6 }}
+  template:
+    {{- include "capsule.pod" $ | nindent 4 }}
+  {{- end }}
+{{- end }}

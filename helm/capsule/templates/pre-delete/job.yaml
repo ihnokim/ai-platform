@@ -1,0 +1,97 @@
+{{- $Values := mergeOverwrite $.Values.global.jobs.kubectl $.Values.jobs -}}
+
+{{- if not $.Values.crds.exclusive }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ include "capsule.pre-delete.name" $ }}"
+  labels:
+    app.kubernetes.io/component: {{ include "capsule.pre-delete.component" . | quote }}
+    {{- include "capsule.labels" . | nindent 4 }}
+    {{- with $Values.labels }}
+      {{- . | toYaml | nindent 4 }}
+    {{- end }}
+  annotations:
+    "helm.sh/hook-weight": "-1"
+    {{- include "capsule.pre-delete.annotations" . | nindent 4 }}
+    {{- with $Values.annotations }}
+      {{- . | toYaml | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ $Values.backoffLimit }}
+  ttlSecondsAfterFinished: {{ $Values.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      annotations:
+        {{- with $Values.podAnnotations }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.podAnnotations }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        app.kubernetes.io/component: {{ include "capsule.pre-delete.component" . | quote }}
+        {{- include "capsule.selectorLabels" . | nindent 8 }}
+        {{- with $Values.podLabels }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.podLabels }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      restartPolicy: {{ $Values.restartPolicy }}
+      {{- if $Values.podSecurityContext.enabled }}
+      securityContext: {{- omit $Values.podSecurityContext "enabled" | toYaml | nindent 8 }}
+      {{- end }}
+      {{- with $Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with $Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "capsule.pre-delete.name" . }}
+      containers:
+        - name: pre-delete-job
+          image: {{ include "capsule.jobsFullyQualifiedDockerImage" . }}
+          imagePullPolicy: {{ $Values.image.pullPolicy }}
+          command:
+          - "/bin/sh"
+          - "-c"
+          - |
+              set -o errexit ; set -o xtrace ; set -o nounset
+          {{- if or (.Values.tls.create) (.Values.certManager.generateCertificates) }}
+              kubectl delete secret -n $NAMESPACE {{ include "capsule.secretTlsName" $ }} --ignore-not-found
+          {{- end }}
+              kubectl delete clusterroles.rbac.authorization.k8s.io capsule-namespace-deleter capsule-namespace-provisioner --ignore-not-found
+              kubectl delete clusterrolebindings.rbac.authorization.k8s.io capsule-namespace-deleter capsule-namespace-provisioner --ignore-not-found
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          {{- if $Values.securityContext.enabled }}
+          securityContext: {{- omit $Values.securityContext "enabled" | toYaml | nindent 12 }}
+          {{- end }}
+          {{- with $Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

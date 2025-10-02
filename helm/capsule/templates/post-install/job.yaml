@@ -1,0 +1,96 @@
+{{- $Values := mergeOverwrite $.Values.global.jobs.kubectl $.Values.jobs -}}
+
+{{- if .Values.tls.create }}
+  {{- if not $.Values.crds.exclusive }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ include "capsule.post-install.name" . }}"
+  labels:
+    app.kubernetes.io/component: {{ include "capsule.post-install.component" . | quote }}
+    {{- include "capsule.labels" . | nindent 4 }}
+    {{- with $Values.labels }}
+      {{- . | toYaml | nindent 4 }}
+    {{- end }}
+  annotations:
+    "helm.sh/hook-weight": "-1"
+    {{- include "capsule.post-install.annotations" . | nindent 4 }}
+    {{- with $Values.annotations }}
+      {{- . | toYaml | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ $Values.backoffLimit }}
+  ttlSecondsAfterFinished: {{ $Values.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      annotations:
+        {{- with $Values.podAnnotations }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.podAnnotations }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        app.kubernetes.io/component: {{ include "capsule.post-install.component" . | quote }}
+        {{- include "capsule.selectorLabels" . | nindent 8 }}
+        {{- with $Values.podLabels }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.podLabels }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      restartPolicy: {{ $Values.restartPolicy }}
+      {{- if $Values.podSecurityContext.enabled }}
+      securityContext: {{- omit $Values.podSecurityContext "enabled" | toYaml | nindent 8 }}
+      {{- end }}
+      {{- with $Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with $Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "capsule.post-install.name" . }}
+      containers:
+      - name: post-install
+        image: {{ include "capsule.jobsFullyQualifiedDockerImage" . }}
+        imagePullPolicy: {{ $Values.image.pullPolicy }}
+        command:
+        - "sh"
+        - "-c"
+        - |
+          set -o errexit ; set -o nounset
+          while [ -z $(kubectl -n $NAMESPACE get secret {{ include "capsule.secretTlsName" $ }} -o jsonpath='{.data.tls\.crt}') ]; do
+            echo 'waiting Capsule to be up and running...' && sleep 5;
+          done
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        {{- if $Values.securityContext.enabled }}
+        securityContext: {{- omit $Values.securityContext "enabled" | toYaml | nindent 10 }}
+        {{- end }}
+        {{- with $Values.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,74 @@
+{{/* Backwards compatibility */}}
+{{- $Values := mergeOverwrite $.Values.global.jobs.certs $.Values.jobs -}}
+
+{{- if and .Values.options.enableSSL .Values.options.generateCertificates -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "capsule-proxy.fullname" . }}-certgen
+  labels:
+    {{- include "capsule-proxy.labels" . | nindent 4 }}
+  {{- with $Values.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ttlSecondsAfterFinished: {{ $Values.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      name: {{ include "capsule-proxy.fullname" . }}-certgen
+      labels:
+        {{- include "capsule-proxy.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: {{ $Values.restartPolicy }}
+      {{- if $Values.podSecurityContext.enabled }}
+      securityContext: {{- omit $Values.podSecurityContext "enabled" | toYaml | nindent 8 }}
+      {{- end }}
+      {{- with $Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      containers:
+      - name: post-install-job
+        image: {{ include "capsule.jobs.certsFullyQualifiedDockerImage" $ }}
+        imagePullPolicy: {{ default $.Values.global.jobs.certs.image.pullPolicy $.Values.jobs.certs.pullPolicy }}
+        args:
+            - create
+            - --host={{ include "capsule-proxy.certJob.SAN" . }}
+            - --namespace=$(NAMESPACE)
+            - --secret-name={{ include "capsule-proxy.fullname" . }}
+            - --cert-name={{ .Values.options.SSLCertFileName }}
+            - --key-name={{ .Values.options.SSLKeyFileName }}
+        {{- with $Values.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        {{- if $Values.securityContext.enabled }}
+        securityContext: {{- omit $Values.securityContext "enabled" | toYaml | nindent 10 }}
+        {{- end }}
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "capsule-proxy.serviceAccountName" . }}
+{{- end }}

@@ -1,0 +1,19 @@
+{{- if eq .Values.kind "Deployment" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "capsule-proxy.fullname" . }}
+  labels:
+    {{- include "capsule-proxy.labels" . | nindent 4 }}
+spec:
+  strategy:
+    type: RollingUpdate
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "capsule-proxy.selectorLabels" . | nindent 6 }}
+  template:
+    {{- include "capsule-proxy.pod" $ | nindent 4 }}
+{{- end }}

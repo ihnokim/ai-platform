@@ -1,0 +1,17 @@
+apiVersion: capsule.clastix.io/v1beta2
+kind: Tenant
+metadata:
+  name: my-workspace
+spec:
+  owners:
+  - name: workspace:1:admin
+    kind: Group
+  - name: workspace:1:member
+    kind: Group
+    clusterRoles:
+      - workspace-member
+  additionalRoleBindings:
+    - clusterRoleName: capsule-resourcepoolclaim-provisioner
+      subjects:
+        - kind: Group
+          name: workspace:1:admin

@@ -1,0 +1,65 @@
+# Test Pod 1: annotation "inho": "message"가 있는 경우 (label 추가됨)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod-with-annotation
+  namespace: gpu-test
+  annotations:
+    inho: "message"  # 이 annotation이 있으면 label "inho": "hello" 추가됨
+spec:
+  containers:
+  - name: test-container
+    image: busybox
+    command: ["sleep", "3600"]
+  restartPolicy: Never
+
+---
+# Test Pod 2: annotation "inho": "message"가 없는 경우 (변경 없음)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod-without-annotation
+  namespace: gpu-test
+  annotations:
+    other: "value"  # 다른 annotation
+spec:
+  containers:
+  - name: test-container
+    image: busybox
+    command: ["sleep", "3600"]
+  restartPolicy: Never
+
+---
+# Test Pod 3: annotation "inho": "wrong-value"인 경우 (변경 없음)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod-wrong-annotation
+  namespace: gpu-test
+  annotations:
+    inho: "wrong-value"  # 값이 "message"가 아님
+spec:
+  containers:
+  - name: test-container
+    image: busybox
+    command: ["sleep", "3600"]
+  restartPolicy: Never
+
+---
+# Test Pod 4: 기존 labels가 있고 annotation "inho": "message"가 있는 경우
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod-with-existing-labels
+  namespace: gpu-test
+  labels:
+    existing: "label"
+    app: "test"
+  annotations:
+    inho: "message"  # 이 annotation이 있으면 label "inho": "hello" 추가됨
+spec:
+  containers:
+  - name: test-container
+    image: busybox
+    command: ["sleep", "3600"]
+  restartPolicy: Never

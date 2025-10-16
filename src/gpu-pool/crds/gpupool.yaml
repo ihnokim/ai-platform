@@ -1,0 +1,49 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gpupools.mrxrunway.ai
+spec:
+  group: mrxrunway.ai
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - gpuProducts
+                - nodeLabel
+                - queues
+              properties:
+                # Pool에 등록할 GPU Product 이름 목록
+                gpuProducts:
+                  type: array
+                  items:
+                    type: string
+                  description: "List of GPU Product names that belong to this pool"
+                # Node Label에서 GPU Product를 확인할 때 참조할 key
+                nodeLabel:
+                  type: string
+                  description: "Node label key to check for GPU Product (e.g., nvidia.com/gpu.product)"
+                queues:
+                  type: array
+                  items:
+                    type: string
+                  description: "List of queues that belong to this pool"
+                # Fractional GPU 사용 여부 (선택)
+                fractionalGpuAllowed:
+                  type: boolean
+                  description: "Whether fractional GPU usage is allowed in this pool"
+      subresources:
+        status: {}
+  scope: Cluster
+  names:
+    plural: gpupools
+    singular: gpupool
+    kind: GpuPool
+    shortNames:
+      - gp

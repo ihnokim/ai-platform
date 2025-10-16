@@ -15,6 +15,9 @@ build: ## Build the webhook Docker image
 	@docker build --platform linux/amd64 -t $(DOCKER_IMAGE) .
 	@echo "✅ Image built: $(DOCKER_IMAGE)"
 
+build-local:
+	@go build -v .
+
 push:
 	@echo "🔓 Pushing image to registry..."
 	docker push $(DOCKER_IMAGE)

@@ -13,18 +13,17 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// MutatingWebhook represents the webhook server
-type MutatingWebhook struct{}
+type GpuPoolWebhook struct{}
 
 // PatchOperation represents a JSON patch operation
-type PatchOperationSchema struct {
+type PatchOperation struct {
 	Op    string      `json:"op"`
 	Path  string      `json:"path"`
 	Value interface{} `json:"value,omitempty"`
 }
 
 // Handle processes the admission webhook request
-func (w *MutatingWebhook) Handle(rw http.ResponseWriter, req *http.Request) {
+func (w *GpuPoolWebhook) Handle(rw http.ResponseWriter, req *http.Request) {
 	log.Printf("Received webhook request: %s %s", req.Method, req.URL.Path)
 
 	// Request body 읽기
@@ -55,7 +54,7 @@ func (w *MutatingWebhook) Handle(rw http.ResponseWriter, req *http.Request) {
 		admissionRequest.Namespace, admissionRequest.Name, admissionRequest.Kind.Kind)
 
 	// Pod인 경우에만 처리
-	var patches []PatchOperationSchema
+	var patches []PatchOperation
 	if admissionRequest.Kind.Kind == "Pod" {
 		patches, err = w.mutatePod(admissionRequest)
 		if err != nil {
@@ -105,34 +104,54 @@ func (w *MutatingWebhook) Handle(rw http.ResponseWriter, req *http.Request) {
 }
 
 // mutatePod processes Pod mutation logic
-func (w *MutatingWebhook) mutatePod(req *admissionv1.AdmissionRequest) ([]PatchOperationSchema, error) {
+func (w *GpuPoolWebhook) mutatePod(req *admissionv1.AdmissionRequest) ([]PatchOperation, error) {
 	var pod corev1.Pod
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal pod: %v", err)
 	}
 
-	var patches []PatchOperationSchema
+	var patches []PatchOperation
 
-	// annotation에 "inho": "message"가 있는지 확인
-	if pod.Annotations != nil && pod.Annotations["inho"] == "message" {
-		log.Printf("Found 'inho: message' annotation in pod %s/%s, adding label", req.Namespace, req.Name)
-
-		// labels가 없는 경우 초기화
-		if pod.Labels == nil {
-			patches = append(patches, PatchOperationSchema{
-				Op:   "add",
-				Path: "/metadata/labels",
-				Value: map[string]string{
-					"inho": "hello",
-				},
-			})
-		} else {
-			// labels가 있는 경우 추가
-			patches = append(patches, PatchOperationSchema{
-				Op:    "add",
-				Path:  "/metadata/labels/inho",
-				Value: "hello",
-			})
+	// annotation에 "mrxrunway.ai/gpu.pool"이 있는지 확인
+	if pod.Annotations != nil {
+		if gpuPoolName, exists := pod.Annotations["mrxrunway.ai/gpu.pool"]; exists {
+			log.Printf("Found GPU pool annotation '%s' in pod %s/%s", gpuPoolName, req.Namespace, req.Name)
+			
+			// GPU Pool이 있으면 GPU count도 필수로 있어야 함
+			gpuCount, countExists := pod.Annotations["mrxrunway.ai/gpu.count"]
+			if !countExists {
+				return nil, fmt.Errorf("mrxrunway.ai/gpu.pool annotation requires mrxrunway.ai/gpu.count annotation")
+			}
+			
+			// GPU Pool 이름과 count를 변수에 저장
+			log.Printf("GPU Pool Name: %s, GPU Count: %s", gpuPoolName, gpuCount)
+			
+			// GPU Pool과 GPU Count를 label에 추가
+			if pod.Labels == nil {
+				// labels가 없는 경우 초기화하면서 추가
+				patches = append(patches, PatchOperation{
+					Op:   "add",
+					Path: "/metadata/labels",
+					Value: map[string]string{
+						"mrxrunway.ai/gpu.pool":  gpuPoolName,
+						"mrxrunway.ai/gpu.count": gpuCount,
+					},
+				})
+				log.Printf("Added labels to pod %s/%s (no existing labels)", req.Namespace, req.Name)
+			} else {
+				// labels가 있는 경우 개별적으로 추가
+				patches = append(patches, PatchOperation{
+					Op:    "add",
+					Path:  "/metadata/labels/mrxrunway.ai~1gpu.pool",
+					Value: gpuPoolName,
+				})
+				patches = append(patches, PatchOperation{
+					Op:    "add",
+					Path:  "/metadata/labels/mrxrunway.ai~1gpu.count",
+					Value: gpuCount,
+				})
+				log.Printf("Added GPU pool and count labels to pod %s/%s", req.Namespace, req.Name)
+			}
 		}
 	}
 
@@ -140,7 +159,7 @@ func (w *MutatingWebhook) mutatePod(req *admissionv1.AdmissionRequest) ([]PatchO
 }
 
 // sendErrorResponse sends an error response
-func (w *MutatingWebhook) sendErrorResponse(rw http.ResponseWriter, uid types.UID, err error) {
+func (w *GpuPoolWebhook) sendErrorResponse(rw http.ResponseWriter, uid types.UID, err error) {
 	admissionResponse := &admissionv1.AdmissionResponse{
 		UID:     uid,
 		Allowed: false,

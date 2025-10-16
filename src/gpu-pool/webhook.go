@@ -13,18 +13,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// MutatingWebhook represents the webhook server
-type MutatingWebhook struct{}
-
-// PatchOperation represents a JSON patch operation
-type PatchOperationSchema struct {
-	Op    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value interface{} `json:"value,omitempty"`
-}
+// TestWebhook represents the webhook server
+type TestWebhook struct{}
 
 // Handle processes the admission webhook request
-func (w *MutatingWebhook) Handle(rw http.ResponseWriter, req *http.Request) {
+func (w *TestWebhook) Handle(rw http.ResponseWriter, req *http.Request) {
 	log.Printf("Received webhook request: %s %s", req.Method, req.URL.Path)
 
 	// Request body 읽기
@@ -55,7 +48,7 @@ func (w *MutatingWebhook) Handle(rw http.ResponseWriter, req *http.Request) {
 		admissionRequest.Namespace, admissionRequest.Name, admissionRequest.Kind.Kind)
 
 	// Pod인 경우에만 처리
-	var patches []PatchOperationSchema
+	var patches []PatchOperation
 	if admissionRequest.Kind.Kind == "Pod" {
 		patches, err = w.mutatePod(admissionRequest)
 		if err != nil {
@@ -105,13 +98,13 @@ func (w *MutatingWebhook) Handle(rw http.ResponseWriter, req *http.Request) {
 }
 
 // mutatePod processes Pod mutation logic
-func (w *MutatingWebhook) mutatePod(req *admissionv1.AdmissionRequest) ([]PatchOperationSchema, error) {
+func (w *TestWebhook) mutatePod(req *admissionv1.AdmissionRequest) ([]PatchOperation, error) {
 	var pod corev1.Pod
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal pod: %v", err)
 	}
 
-	var patches []PatchOperationSchema
+	var patches []PatchOperation
 
 	// annotation에 "inho": "message"가 있는지 확인
 	if pod.Annotations != nil && pod.Annotations["inho"] == "message" {
@@ -119,7 +112,7 @@ func (w *MutatingWebhook) mutatePod(req *admissionv1.AdmissionRequest) ([]PatchO
 
 		// labels가 없는 경우 초기화
 		if pod.Labels == nil {
-			patches = append(patches, PatchOperationSchema{
+			patches = append(patches, PatchOperation{
 				Op:   "add",
 				Path: "/metadata/labels",
 				Value: map[string]string{
@@ -128,7 +121,7 @@ func (w *MutatingWebhook) mutatePod(req *admissionv1.AdmissionRequest) ([]PatchO
 			})
 		} else {
 			// labels가 있는 경우 추가
-			patches = append(patches, PatchOperationSchema{
+			patches = append(patches, PatchOperation{
 				Op:    "add",
 				Path:  "/metadata/labels/inho",
 				Value: "hello",
@@ -140,7 +133,7 @@ func (w *MutatingWebhook) mutatePod(req *admissionv1.AdmissionRequest) ([]PatchO
 }
 
 // sendErrorResponse sends an error response
-func (w *MutatingWebhook) sendErrorResponse(rw http.ResponseWriter, uid types.UID, err error) {
+func (w *TestWebhook) sendErrorResponse(rw http.ResponseWriter, uid types.UID, err error) {
 	admissionResponse := &admissionv1.AdmissionResponse{
 		UID:     uid,
 		Allowed: false,

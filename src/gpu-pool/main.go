@@ -31,7 +31,7 @@ func main() {
 	}
 
 	// Webhook 핸들러 생성
-	webhook := &GpuPoolWebhook{}
+	webhook := &KaiGpuPoolWebhook{}
 
 	// HTTP 서버 설정
 	mux := http.NewServeMux()

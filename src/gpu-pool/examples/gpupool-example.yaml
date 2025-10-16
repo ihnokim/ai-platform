@@ -1,0 +1,18 @@
+apiVersion: mrxrunway.ai/v1alpha1
+kind: GpuPool
+metadata:
+  name: inho-pool
+spec:
+  # 이 Pool에 포함될 GPU Product 이름들
+  gpuProducts:
+    - NVIDIA-GeForce-RTX-2080-Ti
+
+  # Node에서 GPU Product를 확인할 라벨 key
+  nodeLabel: "nvidia.com/gpu.product"
+
+  # 이 Pool에 포함될 queues 이름들
+  queues:
+    - test
+
+  # Fractional GPU 사용 허용 여부
+  fractionalGpuAllowed: true

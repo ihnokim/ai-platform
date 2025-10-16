@@ -5,11 +5,12 @@ metadata:
   namespace: gpu-test
   annotations:
     mrxrunway.ai/gpu.pool: "test"
-    mrxrunway.ai/gpu.count: "1"
+    mrxrunway.ai/gpu.count: "2"
 spec:
+  schedulerName: kai-scheduler
   containers:
   - name: test-container
-    image: busybox
+    image: ubuntu
     command: ["sleep", "3600"]
   restartPolicy: Never
 
@@ -22,8 +23,9 @@ metadata:
   annotations:
     mrxrunway.ai/gpu.pool: "test"
 spec:
+  schedulerName: kai-scheduler
   containers:
   - name: test-container
-    image: busybox
+    image: ubuntu
     command: ["sleep", "3600"]
   restartPolicy: Never

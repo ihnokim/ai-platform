@@ -1,18 +1,27 @@
+# 예시 1: 특정 노드별 GPU 구성을 명시적으로 정의
 apiVersion: mrxrunway.ai/v1alpha1
 kind: GpuPool
 metadata:
   name: inho-pool
 spec:
-  # 이 Pool에 포함될 GPU Product 이름들
-  gpuProducts:
-    - NVIDIA-GeForce-RTX-2080-Ti
+  nodes:
+    - name: platform-prototype-dp2
+      gpus:
+        - name: NVIDIA-GeForce-RTX-2080-Ti
+          count: 1
+    - name: platform-prototype-dp3
+      gpus:
+        - name: NVIDIA-GeForce-RTX-2080-Ti
+          count: 1
 
-  # Node에서 GPU Product를 확인할 라벨 key
   nodeLabel: "nvidia.com/gpu.product"
 
-  # 이 Pool에 포함될 queues 이름들
-  queues:
-    - test
+---
 
-  # Fractional GPU 사용 허용 여부
-  fractionalGpuAllowed: true
+apiVersion: mrxrunway.ai/v1alpha1
+kind: GpuPool
+metadata:
+  name: test-pool
+spec:
+  nodeLabel: "nvidia.com/gpu.product"
+  nodes: ~

@@ -1,0 +1,64 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gpupools.mrxrunway.ai
+spec:
+  group: mrxrunway.ai
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - nodes
+                - nodeLabel
+              properties:
+                nodes:
+                  type: array
+                  nullable: true
+                  default: null
+                  items:
+                    type: object
+                    required:
+                      - name
+                    properties:
+                      name:
+                        type: string
+                        description: "Node name"
+                      gpus:
+                        type: array
+                        nullable: true
+                        default: null
+                        items:
+                          type: object
+                          required:
+                            - name
+                          properties:
+                            name:
+                              type: string
+                              description: "GPU product name"
+                            count:
+                              type: integer
+                              minimum: 1
+                              nullable: true
+                              default: null
+                              description: "Number of GPUs of this type. If null, all available GPUs of this type on the node are used."
+                  description: "List of pool members with node-specific GPU configurations. If null, all nodes with matching GPU products are included."
+                # 전역 GPU Product 목록 (members가 null일 때 사용)
+                nodeLabel:
+                  type: string
+                  description: "Node label key to check for GPU Product (e.g., nvidia.com/gpu.product)"
+      subresources:
+        status: {}
+  scope: Cluster
+  names:
+    plural: gpupools
+    singular: gpupool
+    kind: GpuPool
+    shortNames:
+      - gp

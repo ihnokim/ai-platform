@@ -1,0 +1,92 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+global:
+  registry: ghcr.io/nvidia/kai-scheduler
+  tag: latest
+  imagePullPolicy: IfNotPresent
+  securityContext: {}
+  imagePullSecrets: []
+  leaderElection: false
+  gpuSharing: false
+  clusterAutoscaling: false
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  namespaceLabelSelector: {}
+  podLabelSelector: {}
+  resourceReservation:
+    namespace: kai-resource-reservation
+    serviceAccount: kai-resource-reservation
+    appLabel: kai-resource-reservation
+
+operator:
+  image:
+    name: operator
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  metricsBindAddress: ":8080"
+  probeBindAddress: ":8081"
+  qps: 50
+  burst: 300
+
+podgrouper:
+  image:
+    name: podgrouper
+    pullPolicy: IfNotPresent
+  queueLabelKey: "kai.scheduler/queue"
+
+podgroupcontroller:
+  image:
+    name: podgroupcontroller
+    pullPolicy: IfNotPresent
+
+binder:
+  name: binder
+  image:
+    name: binder
+    pullPolicy: IfNotPresent
+  resourceReservationImage:
+    name: resourcereservation
+  ports:
+    metricsPort: 8080
+  cdi: false
+
+scheduler:
+  image:
+    name: scheduler
+    pullPolicy: IfNotPresent
+  placementStrategy: binpack
+  ports:
+    metricsPort: 8080
+
+queuecontroller:
+  image:
+    name: queuecontroller
+    pullPolicy: IfNotPresent
+  certSecretName: queuecontroller-webhook-tls-secret
+
+admission:
+  name: kai-admission
+  image:
+    name: admission
+    pullPolicy: IfNotPresent
+  certSecretName: admission-webhook-tls-secret
+  ports:
+    webhookPort: 9443
+    metricsPort: 8080
+    probePort: 8081
+  cdi: false
+
+nodescaleadjuster:
+  image:
+    name: nodescaleadjuster
+    pullPolicy: IfNotPresent
+  scalingPodImage:
+    name: scalingpod
+  scalingPodNamespace: kai-scale-adjust
+
+crdupgrader:
+  image:
+    name: crd-upgrader
+    pullPolicy: IfNotPresent

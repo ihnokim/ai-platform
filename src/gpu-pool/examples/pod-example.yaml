@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod-with-annotation
+  namespace: gpu-test
+  annotations:
+    mrxrunway.ai/gpu.pool: "test"
+    mrxrunway.ai/gpu.count: "2"
+spec:
+  schedulerName: kai-scheduler
+  containers:
+  - name: test-container
+    image: ubuntu
+    command: ["sleep", "3600"]
+  restartPolicy: Never
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod-with-missing-annotation
+  namespace: gpu-test
+  annotations:
+    mrxrunway.ai/gpu.pool: "test"
+spec:
+  schedulerName: kai-scheduler
+  containers:
+  - name: test-container
+    image: ubuntu
+    command: ["sleep", "3600"]
+  restartPolicy: Never

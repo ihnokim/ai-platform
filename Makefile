@@ -1087,3 +1087,125 @@ destroy-capsule-proxy: ## Destroy capsule proxy
 	@helm uninstall capsule-proxy -n ${CAPSULE__NAMESPACE}
 	@$(MAKE) destroy-virtualservice name=capsule-proxy namespace=${CAPSULE__NAMESPACE}
 	@echo "✅ Capsule proxy uninstalled!"
+
+.PHONY: add-gpu-operator-repo
+add-gpu-operator-repo: ## Add gpu-operator repo
+	@helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+	@helm repo update
+
+.PHONY: install-gpu-operator
+install-gpu-operator: ## Install gpu-operator
+	@if [ ! -f "helm/gpu-operator/Chart.yaml" ]; then \
+		echo "📦 Downloading nvidia/gpu-operator chart..."; \
+		$(MAKE) add-gpu-operator-repo; \
+		mkdir -p helm; \
+		helm pull nvidia/gpu-operator --untar --untardir helm; \
+		echo "✅ nvidia/gpu-operator chart downloaded to helm/gpu-operator/"; \
+	else \
+		echo "✅ nvidia/gpu-operator chart already exists (helm/gpu-operator/Chart.yaml found)"; \
+	fi
+
+.PHONY: gpu-operator
+gpu-operator: install-gpu-operator ## Install gpu-operator
+	@helm upgrade --install gpu-operator helm/gpu-operator -n ${GPU_OPERATOR__NAMESPACE} --create-namespace \
+		--set nfd.enabled=true \
+		--set psa.enabled=false \
+		--set cdi.enabled=false \
+		--set sandboxWorkloads.enabled=false \
+		--set driver.enabled=true \
+		--set toolkit.enabled=true \
+		--set toolkit.env[0].name=ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED \
+		--set-string toolkit.env[0].value=true \
+		--set toolkit.env[1].name=ACCEPT_NVIDIA_VISIBLE_DEVICES_AS_VOLUME_MOUNTS \
+		--set-string toolkit.env[1].value=false \
+		--set devicePlugin.enabled=false \
+		--set dcgm.enabled=false \
+		--set dcgmExporter.enabled=true \
+		--set gfd.enabled=true \
+		--set migManager.enabled=false \
+		--set nodeStatusExporter.enabled=false \
+		--set gds.enabled=false \
+		--set gdrcopy.enabled=false \
+		--set vgpuManager.enabled=false \
+		--set vgpuDeviceManager.enabled=false \
+		--set vfioManager.enabled=false \
+		--set kataManager.enabled=false \
+		--set sandboxDevicePlugin.enabled=false \
+		--set ccManager.enabled=false
+	@echo "✅ GPU operator installed!"
+
+.PHONY: destroy-gpu-operator
+destroy-gpu-operator: ## Destroy gpu-operator
+	@helm uninstall gpu-operator -n ${GPU_OPERATOR__NAMESPACE}
+	@echo "✅ GPU operator uninstalled!"
+
+.PHONY: install-kai-scheduler
+install-kai-scheduler:
+	@if [ ! -f "helm/kai-scheduler/Chart.yaml" ]; then \
+		echo "📦 Downloading kai-scheduler/kai-scheduler chart..."; \
+		mkdir -p helm; \
+		helm pull oci://ghcr.io/nvidia/kai-scheduler/kai-scheduler --version ${KAI_SCHEDULER__VERSION} --untar --untardir helm; \
+		echo "✅ kai-scheduler/kai-scheduler chart downloaded to helm/kai-scheduler/"; \
+	else \
+		echo "✅ kai-scheduler/kai-scheduler chart already exists (helm/kai-scheduler/Chart.yaml found)"; \
+	fi
+
+.PHONY: kai-scheduler
+kai-scheduler: ## Install KAI Scheduler directly
+	@helm upgrade --install kai-scheduler helm/kai-scheduler \
+		-n ${KAI_SCHEDULER__NAMESPACE} --create-namespace \
+		--set "global.gpuSharing=true"
+	@echo "✅ NVIDIA KAI Scheduler installed!"
+
+.PHONY: check-gpu
+check-gpu: ## Check GPU
+# sum by (node) (kube_pod_container_resource_requests{resource="nvidia_com_gpu"})
+	@kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels | has("nvidia.com/gpu.product")) | { \
+		name: .metadata.name, \
+		product: .metadata.labels."nvidia.com/gpu.product", \
+		count: .metadata.labels."nvidia.com/gpu.count", \
+		replicas: .metadata.labels."nvidia.com/gpu.replicas", \
+		mig_capable: .metadata.labels."nvidia.com/mig.capable", \
+		mig_strategy: .metadata.labels."nvidia.com/mig.strategy", \
+		gpu_memory: .metadata.labels."nvidia.com/gpu.memory", \
+		gpu_capacity: .status.capacity."nvidia.com/gpu", \
+		gpu_allocatable: .status.allocatable."nvidia.com/gpu" \
+	}'
+
+.PHONY: check-queue
+check-queue: ## Check queue
+	@kubectl get queues -o json | jq -r '.items[] | { \
+		name: .metadata.name, \
+		quota: .spec.resources.gpu.quota, \
+		limit: .spec.resources.gpu.limit, \
+		requested: .status.requested."nvidia.com/gpu", \
+		allocated: .status.allocated."nvidia.com/gpu" \
+	}'
+
+.PHONY: add-hami-repo
+add-hami-repo: ## Add hami repo
+	@helm repo add hami-charts https://project-hami.github.io/HAMi/
+	@helm repo update
+
+.PHONY: install-hami
+install-hami: ## Install hami chart
+	@if [ ! -f "helm/hami/Chart.yaml" ]; then \
+		echo "📦 Downloading hami-charts/hami chart..."; \
+		$(MAKE) add-hami-repo; \
+		mkdir -p helm; \
+		helm pull hami-charts/hami --untar --untardir helm; \
+		echo "✅ hami-charts/hami chart downloaded to helm/hami/"; \
+	else \
+		echo "✅ hami-charts/hami chart already exists (helm/hami/Chart.yaml found)"; \
+	fi
+
+.PHONY: hami
+hami: install-hami ## Install hami chart
+	@helm upgrade --install hami hami-charts/hami -n ${HAMI__NAMESPACE} --create-namespace
+	@echo "✅ HAMi installed!"
+
+.PHONY: destroy-hami
+destroy-hami: ## Destroy hami chart
+	@helm uninstall hami -n ${HAMI__NAMESPACE}
+	@echo "✅ HAMi uninstalled!"
+ 
